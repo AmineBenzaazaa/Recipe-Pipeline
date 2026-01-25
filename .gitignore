@@ -1,0 +1,11 @@
+
+# env
+.env
+.env.*
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc

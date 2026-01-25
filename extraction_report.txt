@@ -1,0 +1,37 @@
+======================================================================
+PINTEREST RECIPE EXTRACTION REPORT
+======================================================================
+
+Input file: Sample.txt
+Output file: pinterest_recipes_final.csv
+OpenAI enabled: True
+
+RESULTS:
+  Total Pinterest URLs:        96
+  Successfully extracted:      96 (100.0%)
+  With recipe names:           96 (100.0%)
+  With recipe URLs:            68 (70.8%)
+
+ENTRIES WITHOUT RECIPE URLs: 28
+(These Pinterest pins may not link to external recipe sites)
+  - Cherry Blossom Cookies: https://www.pinterest.com/pin/99571841761719960/
+  - Heaven on Earth Cake: https://www.pinterest.com/pin/115334440459315216/
+  - Strawberry Kiss Cookies: https://www.pinterest.com/pin/115334440459313425/
+  - Valentine Hearts Fudge: https://www.pinterest.com/pin/115334440459313423/
+  - No Bake Peanut Butter Pie: https://www.pinterest.com/pin/265430971783567278/
+  - No Bake Peanut Butter Pie: https://www.pinterest.com/pin/115334440459313345/
+  - Reese’s Peanut Butter Cup Pie: https://www.pinterest.com/pin/115334440459310166/
+  - Chocolate Covered Strawberry Brownies: https://www.pinterest.com/pin/115334440459310165/
+  - Deviled Strawberries: https://www.pinterest.com/pin/115334440459310168/
+  - Cherry Blossom Cookies: https://www.pinterest.com/pin/115334440459310164/
+  ... and 18 more
+
+======================================================================
+NEXT STEPS:
+
+✅ Your data is ready at: pinterest_recipes_final.csv
+
+To process these recipes through the pipeline:
+  python generate_recipe_batch.py --input pinterest_recipes_final.csv --out final_results.csv
+
+======================================================================
