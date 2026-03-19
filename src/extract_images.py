@@ -86,6 +86,75 @@ def _parse_dimension(value: Optional[str]) -> Optional[int]:
         return None
 
 
+def _resolve_image_url(url: str, base_url: Optional[str]) -> Optional[str]:
+    if not url:
+        return None
+    url = _clean_url(url)
+    if base_url and not url.startswith("http"):
+        url = urljoin(base_url, url)
+    if not _is_valid_image_url(url):
+        return None
+    return url
+
+
+def extract_primary_image_url(
+    html: str,
+    base_url: Optional[str] = None,
+    recipe_image_urls: Optional[List[str]] = None,
+) -> Optional[str]:
+    if recipe_image_urls:
+        for url in recipe_image_urls:
+            resolved = _resolve_image_url(url, base_url)
+            if resolved:
+                return resolved
+
+    soup = BeautifulSoup(html, "lxml")
+
+    meta_candidates = [
+        ("property", "og:image"),
+        ("property", "og:image:url"),
+        ("name", "twitter:image"),
+        ("name", "twitter:image:src"),
+    ]
+    for attr, value in meta_candidates:
+        tag = soup.find("meta", attrs={attr: value})
+        if tag and tag.get("content"):
+            resolved = _resolve_image_url(tag["content"], base_url)
+            if resolved:
+                return resolved
+
+    for url in _extract_jsonld_images(html):
+        resolved = _resolve_image_url(url, base_url)
+        if resolved:
+            return resolved
+
+    img_candidates: List[Tuple[int, str]] = []
+    for img in soup.find_all("img"):
+        src = (
+            img.get("src")
+            or img.get("data-src")
+            or img.get("data-lazy-src")
+            or img.get("data-original")
+        )
+        if not src:
+            continue
+        resolved = _resolve_image_url(src, base_url)
+        if not resolved:
+            continue
+        width = _parse_dimension(img.get("width") or img.get("data-width"))
+        height = _parse_dimension(img.get("height") or img.get("data-height"))
+        if width and height and width * height < 40000:
+            continue
+        area = (width or 0) * (height or 0)
+        img_candidates.append((area, resolved))
+
+    if img_candidates:
+        img_candidates.sort(key=lambda x: x[0], reverse=True)
+        return img_candidates[0][1]
+
+    return None
+
+
 def extract_image_urls(
     html: str,
     base_url: Optional[str] = None,

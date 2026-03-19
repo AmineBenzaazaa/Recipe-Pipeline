@@ -3,14 +3,23 @@ Midjourney prompt generation using GPT (legacy approach).
 
 This module generates Midjourney prompts using GPT analysis of recipe content,
 following the proven approach from legacy.py.
+
+UPDATED: Pinterest-first *recipe-locked medium editorial* styling
+- Featured + Serving: medium editorial distance, but framing LOCKED on the recipe
+- Plate/bowl allowed only as minimal support (not readable, not descriptive)
+- No visible table surface, no scene, no environment storytelling
+- Instructions: keeps hands/process (still vertical 2:3)
+- All prompts: enforce no-text exclusions before --ar
+- Aspect ratios: featured = 3:2, instructions + serving = 2:3
 """
 
 import json
 import logging
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from .config import Settings
+from .midjourney_prompt_sanitizer import sanitize_midjourney_prompt
 from .models import Recipe
 from .openai_client import responses_create_text
 
@@ -19,6 +28,28 @@ def generate_random_seed() -> int:
     """Generate a random seed for Midjourney consistency."""
     import random
     return random.randint(1000000000, 9999999999)
+
+
+def _inject_no_text_exclusions(prompt_text: str) -> str:
+    """
+    Ensure the prompt contains the no-text / no-brand exclusions inserted BEFORE --ar.
+    Keeps diffs minimal by only touching prompts missing the exclusions.
+    """
+    if not prompt_text:
+        return prompt_text
+
+    prompt = prompt_text
+    if "no text" not in prompt.lower():
+        exclusions = "no text no words no letters no typography no watermark no logo no branding no labels"
+        if " --ar" in prompt:
+            prompt = prompt.replace(" --ar", f", {exclusions} --ar")
+        else:
+            prompt = f"{prompt}, {exclusions}"
+
+    if not re.search(r"\s--v\s+[\d.]+", prompt):
+        prompt = f"{prompt} --v 7"
+
+    return prompt
 
 
 def generate_midjourney_prompts_gpt(
@@ -30,45 +61,32 @@ def generate_midjourney_prompts_gpt(
 ) -> List[Dict]:
     """
     Generate 3 Midjourney image prompts using GPT analysis (legacy approach).
-    
-    This uses GPT to analyze the recipe content and generate customized prompts
-    specific to the actual dish, following the proven legacy.py approach.
-    
-    Args:
-        recipe: Recipe object with extracted data
-        focus_keyword: Focus keyword for SEO
-        recipe_text: Formatted recipe text
-        settings: Application settings
-        logger: Logger instance
-    
+
     Returns:
         List of 3 prompt dictionaries (featured, instructions_process, serving)
     """
     if not settings.openai_api_key:
         logger.info("OpenAI API key not set; using template prompts")
-        return _generate_template_prompts(recipe, focus_keyword, settings)
-    
-    # Generate a unique seed for this recipe batch
+        return generate_template_prompts(recipe, focus_keyword, settings)
+
     seed = generate_random_seed()
-    
-    # Use focus keyword or recipe name
+    template_payload = generate_template_prompts(recipe, focus_keyword, settings, seed)
+    template_json = json.dumps(template_payload, ensure_ascii=True, indent=2)
+
     if not focus_keyword:
         focus_keyword = recipe.name or "recipe"
-    
-    # Universal style anchor (from legacy.py)
+
     style_anchor = "Exact same batch as the featured image. focus on the recipe."
-    
-    # Build article content context (first 3000 chars like legacy)
+
     article_context = recipe_text[:3000] if recipe_text else ""
     if not article_context:
-        # Fallback: build context from recipe data
         article_context = f"""
 Recipe: {recipe.name or focus_keyword}
 Description: {recipe.description or 'Delicious recipe'}
 Ingredients: {', '.join(recipe.ingredients[:10]) if recipe.ingredients else 'Various ingredients'}
 Instructions: {', '.join(recipe.instructions[:5]) if recipe.instructions else 'Follow recipe steps'}
 """
-    
+
     prompt = f"""
 You are a professional food photography director and SEO expert specializing in MidJourney prompts.
 
@@ -80,18 +98,29 @@ Article Content:
 {article_context}
 
 Generate prompts for these 3 images in order:
-1. Featured Image (Hero shot – top of article)
-2. Instructions-only process photo (Middle of article, in the instructions section) --ar 2:3
-3. Serving Image (Within the Serving/Serving Suggestions section if it exists)
+1. Featured Image (Pinterest viral close-up hero) --ar 3:2
+2. Instructions-only process photo (Hands preparing the dish) --ar 2:3
+3. Serving Image (Pinterest viral plated serving hero) --ar 2:3
 
 STRICT RULES FOR IMAGE GENERATION:
-- Featured image should be a hero shot of the finished dish
-- Instructions process photo should show hands preparing/cooking the dish in 2:3 vertical format
-- Serving image should show elegant plating and presentation
-- Maintain exact continuity between all images using the same style anchor and seed
-- NO text overlay, NO watermark, NO labels, NO writing on the image
-- Professional magazine-quality food photography
-- Clean composition, appetizing presentation
+- Featured image MUST match Pinterest viral dessert/recipe hero styling:
+  • Tight close-up hero framing of the dish
+  • Soft natural kitchen lighting with warm highlights
+  • Glossy texture detail, realistic crumbs, sauce drips, layered texture
+  • Shallow depth of field, DSLR 85mm aesthetic, rich contrast
+  • Clean composition with negative space for text overlay
+  • Natural marble or soft neutral surface may be visible
+- Instructions process photo MUST show hands actively preparing/cooking the dish
+- Serving image MUST match featured style:
+  • Tight plated hero shot, commercial food blog look
+  • Plate is secondary but visible, natural marble/neutral surface present
+  • Warm cozy tones, realistic highlights/crumbs, same lighting family as featured
+- Include slight natural imperfections and human-made food styling
+- Avoid CGI / synthetic look
+- Avoid any pork, bacon, ham, lard, gelatin, or alcohol references.
+- Maintain exact continuity using the same style anchor and seed.
+- NO text, NO watermark, NO labels, NO writing on the image.
+- Professional magazine-quality food photography.
 
 For each image, provide:
 - A detailed MidJourney prompt with style anchor and seed
@@ -101,117 +130,63 @@ For each image, provide:
 
 SEO Requirements:
 - Alt Text: Must include exact keyword "{focus_keyword}"
-- Filename: Hyphenated, lowercase, include keyword (e.g., {focus_keyword.lower().replace(' ', '-')}-featured.jpg)
-- Caption: Short, descriptive, human-readable sentence
+- Filename: Hyphenated, lowercase, include keyword
+- Caption: Short, descriptive, human-readable
 - Description: Full sentence describing dish with continuity reference
 
 Use this seed for ALL prompts: {seed}
 Include this style anchor in ALL prompts: "{style_anchor}"
 
 Return the response in this exact JSON format:
-{{
-  "seed": {seed},
-  "focus_keyword": "{focus_keyword}",
-  "images": [
-    {{
-      "type": "featured",
-      "prompt": "Photo-realistic food photography of [dish name], hero shot of the finished recipe with all key details visible. Exact batch reference for later steps. {style_anchor} --ar 3:2 --seed {seed}",
-      "placement": "Top of article (before introduction)",
-      "description": "Hero shot of the finished dish",
-      "seo_metadata": {{
-        "alt_text": "Alt text including exact keyword '{focus_keyword}'",
-        "filename": "suggested-filename-with-keyword.jpg",
-        "caption": "Short descriptive caption for humans",
-        "description": "Full sentence description with dish reference"
-      }}
-    }},
-    {{
-      "type": "instructions_process",
-      "prompt": "Instructions-only process photo of [dish name] preparation, hands working with ingredients and cooking techniques. Same batch as featured image, vertical composition showing cooking process. {style_anchor} --ar 2:3 --seed {seed}",
-      "placement": "Middle of article (in instructions section)",
-      "description": "Hands preparing the dish during cooking process",
-      "seo_metadata": {{
-        "alt_text": "Preparing {focus_keyword} step by step cooking process",
-        "filename": "instructions-process-filename.jpg",
-        "caption": "Step-by-step preparation of the dish",
-        "description": "Detailed cooking process showing hands preparing the recipe"
-      }}
-    }},
-    {{
-      "type": "serving",
-      "prompt": "Elegant serving presentation of [dish name], beautifully plated and ready to serve. Same batch as featured image, showing the dish in its final serving context. {style_anchor} --ar 2:3 --seed {seed}",
-      "placement": "Before serving section",
-      "description": "Dish being served",
-      "seo_metadata": {{
-        "alt_text": "{focus_keyword} being served on beautiful dinnerware",
-        "filename": "serving-filename.jpg",
-        "caption": "Serving the finished dish caption",
-        "description": "Serving description with continuity"
-      }}
-    }}
-  ]
-}}
+{template_json}
 
-Make the prompts specific to the actual recipe content. Replace [dish name] with the actual dish name "{recipe.name or focus_keyword}". Ensure all SEO metadata fields are properly populated with keyword-optimized content. Add "no text no words no letters no typography no watermark no logo no branding no labels" to each prompt before the --ar parameter.
+Output ONLY JSON.
 """
-    
+
     try:
         payload = {
             "model": settings.model_name,
             "input": [
                 {
                     "role": "system",
-                    "content": "You are a professional food photography director. Generate detailed MidJourney prompts with exact placement metadata."
+                    "content": (
+                        "You are a professional food photography director. "
+                        "Generate detailed MidJourney prompts with exact placement metadata. "
+                        "Output JSON only."
+                    ),
                 },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
+                {"role": "user", "content": prompt},
             ],
             "temperature": 0.3,
-            "max_output_tokens": 2000
+            "max_output_tokens": 2000,
         }
-        
+
         output_text = responses_create_text(settings, payload, logger)
-        
-        # Try to parse JSON response
+
         try:
-            # Extract JSON from response if it's wrapped in markdown
             if "```json" in output_text:
                 json_text = output_text.split("```json")[1].split("```")[0].strip()
             elif "```" in output_text:
                 json_text = output_text.split("```")[1].split("```")[0].strip()
             else:
-                # Try to find JSON in the text
                 json_text = _extract_json_from_text(output_text)
-            
+
             if not json_text:
                 raise ValueError("No JSON found in response")
-            
+
             data = json.loads(json_text)
-            
-            # Extract images array
-            images = data.get("images", [])
-            if not images or len(images) != 3:
-                raise ValueError("Invalid images array")
-            
-            # Ensure prompts have the no-text exclusions
-            for img in images:
-                prompt_text = img.get("prompt", "")
-                if "no text" not in prompt_text.lower():
-                    # Add no-text exclusions before --ar parameter
-                    prompt_text = prompt_text.replace(" --ar", ", no text no words no letters no typography no watermark no logo no branding no labels --ar")
-                    img["prompt"] = prompt_text
-            
+            images, note = _normalize_gpt_images_payload(data, template_payload)
+            if note:
+                logger.warning(f"GPT prompt response normalized with fallback: {note}")
             return images
-            
+
         except (json.JSONDecodeError, ValueError, KeyError) as e:
             logger.warning(f"Failed to parse GPT prompt response: {e}; using template prompts")
-            return generate_template_prompts(recipe, focus_keyword, settings, seed)
-    
+            return template_payload
+
     except Exception as e:
         logger.warning(f"GPT prompt generation failed: {e}; using template prompts")
-        return generate_template_prompts(recipe, focus_keyword, settings)
+        return template_payload
 
 
 def _extract_json_from_text(text: str) -> str:
@@ -220,60 +195,135 @@ def _extract_json_from_text(text: str) -> str:
     return match.group(1) if match else ""
 
 
+def _normalize_gpt_images_payload(
+    data: object,
+    template_payload: List[Dict],
+) -> Tuple[List[Dict], str]:
+    if not isinstance(template_payload, list) or len(template_payload) != 3:
+        return template_payload, "Invalid template payload"
+
+    template_by_type = {item.get("type"): item for item in template_payload}
+    ordered_types = ["featured", "instructions_process", "serving"]
+
+    if isinstance(data, dict):
+        images = data.get("images") or data.get("data") or data.get("prompts")
+    elif isinstance(data, list):
+        images = data
+    else:
+        return template_payload, "Invalid JSON root"
+
+    if not isinstance(images, list) or not images:
+        return template_payload, "Invalid images array"
+
+    result_by_type: Dict[str, Dict] = {}
+    for idx, item in enumerate(images[:3]):
+        if not isinstance(item, dict):
+            continue
+        raw_type = (item.get("type") or item.get("image_type") or item.get("name") or "").strip().lower()
+        image_type = raw_type if raw_type in template_by_type else ordered_types[idx]
+        base = dict(template_by_type.get(image_type, template_payload[idx]))
+        prompt = item.get("prompt")
+        if isinstance(prompt, str) and prompt.strip():
+            base["prompt"] = sanitize_midjourney_prompt(
+                _inject_no_text_exclusions(prompt.strip()),
+                image_type,
+            )
+        if isinstance(item.get("placement"), str):
+            base["placement"] = item["placement"]
+        if isinstance(item.get("description"), str):
+            base["description"] = item["description"]
+        if isinstance(item.get("seo_metadata"), dict):
+            base["seo_metadata"] = {**base.get("seo_metadata", {}), **item["seo_metadata"]}
+        result_by_type[base.get("type", image_type)] = base
+
+    for image_type in ordered_types:
+        if image_type not in result_by_type:
+            result_by_type[image_type] = template_by_type[image_type]
+
+    return [result_by_type[image_type] for image_type in ordered_types], ""
+
+
 def generate_template_prompts(
     recipe: Recipe,
     focus_keyword: str,
     settings: Settings,
-    seed: Optional[int] = None
+    seed: Optional[int] = None,
 ) -> List[Dict]:
     """
     Generate template prompts (fallback when GPT is unavailable).
-    
-    Uses the legacy.py template structure with simpler, cleaner prompts.
+
+    FINAL: Recipe-locked medium editorial framing.
     """
     if seed is None:
         seed = generate_random_seed()
-    
+
     dish_name = recipe.name or focus_keyword or "the dish"
     style_anchor = "Exact same batch as the featured image. focus on the recipe."
-    keyword_slug = focus_keyword.lower().replace(' ', '-') if focus_keyword else "recipe"
-    
+    keyword_slug = focus_keyword.lower().replace(" ", "-") if focus_keyword else "recipe"
+
     return [
         {
             "type": "featured",
-            "prompt": f"Photo-realistic food photography of {dish_name}, hero shot of the finished recipe with all key details visible. Exact batch reference for later steps. {style_anchor} no text no words no letters no typography no watermark no logo no branding no labels --ar 3:2 --seed {seed} --quality 5",
+            "prompt": (
+                f"Ultra realistic food photography of {dish_name}, Pinterest viral recipe style, "
+                f"tight close-up hero shot, commercial bakery-style food photography. "
+                f"Soft natural kitchen lighting with warm highlights, glossy texture detail, "
+                f"realistic crumbs, sauce drips and layered textures, shallow depth of field, "
+                f"DSLR 85mm lens look, centered stacked presentation, rich contrast, cozy modern "
+                f"dessert blog aesthetic, clean composition with negative space for text overlay. "
+                f"Natural marble or soft neutral surface visible. {style_anchor} slight natural "
+                f"imperfections, human-made food styling, no CGI look no text no words no letters "
+                f"no typography no watermark no logo no branding no labels "
+                f"--ar 3:2 --seed {seed} --v 6 --style raw --s 300 --q 1"
+            ),
             "placement": "Top of article (before introduction)",
-            "description": "Hero shot of the finished dish",
+            "description": "Recipe-locked medium editorial hero shot of the finished dish",
             "seo_metadata": {
-                "alt_text": f"{focus_keyword} finished dish on elegant plate" if focus_keyword else f"{dish_name} finished dish",
+                "alt_text": f"{focus_keyword} finished dish recipe-locked hero image" if focus_keyword else f"{dish_name} finished dish hero image",
                 "filename": f"{keyword_slug}-featured.jpg",
-                "caption": f"Delicious {dish_name} ready to serve",
-                "description": f"This stunning {dish_name} showcases the perfect balance of flavors and presentation."
-            }
+                "caption": f"{dish_name}, ready to enjoy",
+                "description": f"A recipe-locked medium editorial hero shot of {dish_name}, keeping full focus on the dish itself.",
+            },
         },
         {
             "type": "instructions_process",
-            "prompt": f"Instructions-only process photo of {dish_name} preparation, hands working with ingredients and cooking techniques. Same batch as featured image, vertical composition showing cooking process. {style_anchor} no text no words no letters no typography no watermark no logo no branding no labels --ar 2:3 --seed {seed} --quality 5",
+            "prompt": (
+                f"Instructions-only process photo of {dish_name} preparation, hands actively working with ingredients. "
+                f"Same batch as featured image, vertical composition clearly showing the cooking step. "
+                f"{style_anchor} no text no words no letters no typography no watermark no logo no branding no labels "
+                f"--ar 2:3 --seed {seed} --v 7"
+            ),
             "placement": "Middle of article (in instructions section)",
-            "description": "Hands preparing the dish during cooking process",
+            "description": "Hands preparing the dish during the cooking process",
             "seo_metadata": {
-                "alt_text": f"Preparing {focus_keyword} step by step cooking process" if focus_keyword else f"Preparing {dish_name} step by step",
+                "alt_text": f"Preparing {focus_keyword} step by step" if focus_keyword else f"Preparing {dish_name} step by step",
                 "filename": f"{keyword_slug}-instructions-process.jpg",
-                "caption": f"Step-by-step preparation of {dish_name}",
-                "description": f"Detailed cooking process showing hands preparing the {dish_name} recipe."
-            }
+                "caption": f"Preparing {dish_name}",
+                "description": f"Hands preparing the {dish_name} recipe during cooking.",
+            },
         },
         {
             "type": "serving",
-            "prompt": f"Elegant serving presentation of {dish_name}, beautifully plated and ready to serve. Same batch as featured image, showing the dish in its final serving context. {style_anchor} no text no words no letters no typography no watermark no logo no branding no labels --ar 2:3 --seed {seed} --quality 5",
+            "prompt": (
+                f"Ultra realistic serving presentation of {dish_name}, Pinterest viral recipe style, "
+                f"tight plated hero shot with commercial food blog photography look. "
+                f"Soft natural kitchen lighting, warm cozy tones, glossy texture detail, realistic "
+                f"crumbs and sauce highlights, shallow depth of field, DSLR 85mm lens aesthetic, "
+                f"centered appetizing composition, rich contrast and layered textures, modern "
+                f"Pinterest recipe pin aesthetic. Plate secondary but visible, natural marble or "
+                f"neutral surface present. Same lighting family as featured image. {style_anchor} "
+                f"slight natural imperfections, human-made food styling, no CGI look no text no "
+                f"words no letters no typography no watermark no logo no branding no labels "
+                f"--ar 2:3 --seed {seed} --v 6 --style raw --s 300 --q 1"
+            ),
             "placement": "Before serving section",
-            "description": "Dish being served",
+            "description": "Recipe-locked serving image matching featured style",
             "seo_metadata": {
-                "alt_text": f"{focus_keyword} being served on beautiful dinnerware" if focus_keyword else f"{dish_name} being served",
+                "alt_text": f"{focus_keyword} serving recipe-locked view" if focus_keyword else f"{dish_name} serving view",
                 "filename": f"{keyword_slug}-serving.jpg",
-                "caption": f"Serving the finished {dish_name}",
-                "description": f"This beautifully plated {dish_name} is ready to impress your guests."
-            }
-        }
+                "caption": f"Serve and enjoy {dish_name}",
+                "description": f"A recipe-locked serving image of {dish_name}, maintaining full visual focus on the food.",
+            },
+        },
     ]
-
+    

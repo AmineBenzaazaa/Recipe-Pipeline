@@ -1,6 +1,11 @@
 import json
 import logging
+import os
 import re
+import shutil
+import subprocess
+from html import unescape
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 import requests
 from bs4 import BeautifulSoup
@@ -12,7 +17,218 @@ from .openai_client import responses_create_text
 
 
 def _clean_text(value: str) -> str:
-    return re.sub(r"\s+", " ", value).strip()
+    if value is None:
+        return ""
+    return re.sub(r"\s+", " ", unescape(str(value))).strip()
+
+
+NAV_NOISE_MARKERS = (
+    "see also",
+    "read more",
+    "leave a comment",
+    "cancel reply",
+    "latest posts",
+    "quick link",
+    "privacy policy",
+    "terms and conditions",
+    "all rights reserved",
+    "affiliate disclaimer",
+    "about us",
+    "contact us",
+    "live search",
+    "save my name",
+    "your email address",
+    "required fields",
+    "pinterest",
+    "instagram",
+    "facebook",
+)
+SECTION_BREAK_MARKERS = (
+    "see also",
+    "read more",
+    "related",
+    "categories",
+    "latest posts",
+    "about us",
+    "contact us",
+    "privacy policy",
+    "terms and conditions",
+    "leave a comment",
+    "cancel reply",
+    "comments",
+    "menu",
+    "search",
+)
+INSTRUCTION_START_VERBS = {
+    "add",
+    "allow",
+    "arrange",
+    "bake",
+    "beat",
+    "blend",
+    "boil",
+    "brush",
+    "chill",
+    "combine",
+    "cook",
+    "cool",
+    "cut",
+    "drain",
+    "fold",
+    "freeze",
+    "grill",
+    "heat",
+    "knead",
+    "let",
+    "line",
+    "mix",
+    "place",
+    "pour",
+    "preheat",
+    "roll",
+    "serve",
+    "shape",
+    "simmer",
+    "slice",
+    "spread",
+    "stir",
+    "transfer",
+    "wash",
+    "whisk",
+}
+MEASUREMENT_PATTERN = re.compile(
+    r"\b(cup|cups|tbsp|tablespoon|tablespoons|tsp|teaspoon|teaspoons|"
+    r"oz|ounce|ounces|lb|pound|pounds|g|gram|grams|kg|ml|l|clove|cloves|"
+    r"slice|slices|can|cans|pinch|dash)\b",
+    re.I,
+)
+INSTRUCTION_ACTION_PATTERN = re.compile(
+    r"\b(preheat|mix|stir|whisk|combine|add|bake|cook|boil|simmer|roll|"
+    r"place|shape|let|allow|chill|freeze|serve|slice|pour|fold|knead|"
+    r"drain|brush|transfer)\b",
+    re.I,
+)
+SECTION_HEADING_PATTERN = re.compile(
+    r"^(ingredients?|instructions?|directions?|method|steps?|notes?|nutrition|"
+    r"faq|tips?|storage|serving|materials?|definition|benefits?)\b",
+    re.I,
+)
+
+
+def _strip_list_prefix(value: str) -> str:
+    text = _clean_text(value)
+    text = re.sub(r"^[\-\*\u2022]+\s*", "", text)
+    text = re.sub(r"^\d+\s*[\).:\-]\s*", "", text)
+    text = re.sub(r"^[a-zA-Z]\)\s*", "", text)
+    return text.strip()
+
+
+def _is_noise_line(value: str) -> bool:
+    text = _clean_text(value)
+    if not text:
+        return True
+    lowered = text.lower()
+    if lowered in {"ingredients", "instructions", "directions", "method"}:
+        return True
+    if lowered.startswith("http://") or lowered.startswith("https://"):
+        return True
+    if len(text) > 320:
+        return True
+    if re.fullmatch(r"[\W_]+", text):
+        return True
+    if any(marker in lowered for marker in NAV_NOISE_MARKERS):
+        return True
+    return False
+
+
+def _looks_like_ingredient(value: str) -> bool:
+    text = _strip_list_prefix(value)
+    if _is_noise_line(text):
+        return False
+    lowered = text.lower()
+    words = re.findall(r"[a-zA-Z']+", text)
+    if not words:
+        return False
+    if len(words) > 20:
+        return False
+    if len(text) > 140:
+        return False
+    if text.endswith(":"):
+        return False
+    if SECTION_HEADING_PATTERN.search(lowered):
+        return False
+    if words[0].lower() in INSTRUCTION_START_VERBS:
+        return False
+    if re.search(r"\b(i|you|we|your|our|my)\b", lowered):
+        return False
+    if MEASUREMENT_PATTERN.search(lowered) or re.search(r"\d", text):
+        return True
+    # Allow short ingredient-like lines without quantities, e.g. "fresh parsley"
+    return len(words) <= 8 and not text.endswith(".")
+
+
+def _looks_like_instruction(value: str) -> bool:
+    text = _strip_list_prefix(value)
+    if _is_noise_line(text):
+        return False
+    lowered = text.lower()
+    words = re.findall(r"[a-zA-Z']+", text)
+    if len(words) < 3:
+        return False
+    if len(words) > 45:
+        return False
+    if text.endswith(":"):
+        return False
+    if SECTION_HEADING_PATTERN.search(lowered):
+        return False
+    if words[0].lower() in {"why", "what", "term", "definition", "categories"}:
+        return False
+    if words[0].lower() in INSTRUCTION_START_VERBS:
+        return True
+    if INSTRUCTION_ACTION_PATTERN.search(lowered):
+        return True
+    return text.endswith(".") and len(words) <= 24
+
+
+def _clean_recipe_lines(
+    items: List[str],
+    section_type: str,
+    max_items: int = 30,
+) -> List[str]:
+    cleaned: List[str] = []
+    seen = set()
+    for item in items:
+        text = _strip_list_prefix(str(item))
+        if not text:
+            continue
+        if section_type == "ingredients":
+            keep = _looks_like_ingredient(text)
+        else:
+            keep = _looks_like_instruction(text)
+        if not keep:
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(text)
+        if len(cleaned) >= max_items:
+            break
+    return cleaned
+
+
+def _is_section_break(value: str, end_keywords: List[str]) -> bool:
+    text = _clean_text(value)
+    if not text:
+        return False
+    lowered = text.lower()
+    if any(keyword in lowered for keyword in end_keywords):
+        return True
+    if any(marker in lowered for marker in SECTION_BREAK_MARKERS):
+        return True
+    if text.endswith(":") and len(text.split()) <= 4:
+        return True
+    return False
 
 
 def _parse_iso8601_duration(value: Optional[str]) -> Optional[str]:
@@ -141,7 +357,12 @@ def _parse_instructions(value: Any) -> List[str]:
             steps.extend(lines)
         else:
             steps.append(_clean_text(value))
-    return [step for step in steps if step]
+    normalized: List[str] = []
+    for step in steps:
+        cleaned = _strip_list_prefix(step)
+        if cleaned:
+            normalized.append(cleaned)
+    return [step for step in normalized if step]
 
 
 def _coerce_string(value: Any) -> Optional[str]:
@@ -171,8 +392,13 @@ def _parse_recipe_from_jsonld(html: str, source_url: str) -> Optional[Recipe]:
         ingredients_list = [
             _clean_text(str(item)) for item in (ingredients or []) if str(item).strip()
         ]
+    ingredients_list = _clean_recipe_lines(ingredients_list, "ingredients", max_items=40)
 
-    instructions_list = _parse_instructions(data.get("recipeInstructions"))
+    instructions_list = _clean_recipe_lines(
+        _parse_instructions(data.get("recipeInstructions")),
+        "instructions",
+        max_items=30,
+    )
 
     nutrition = data.get("nutrition") or {}
     calories = None
@@ -203,8 +429,8 @@ def _parse_recipe_from_jsonld(html: str, source_url: str) -> Optional[Recipe]:
         servings = str(servings)
 
     return Recipe(
-        name=data.get("name"),
-        description=description,
+        name=_clean_text(data.get("name") or "") or None,
+        description=_clean_text(description or "") or None,
         servings=servings,
         prep_time=_parse_iso8601_duration(data.get("prepTime")),
         cook_time=_parse_iso8601_duration(data.get("cookTime")),
@@ -221,6 +447,45 @@ def _parse_recipe_from_jsonld(html: str, source_url: str) -> Optional[Recipe]:
 
 
 def fetch_html(url: str, settings: Settings, logger: logging.Logger) -> Optional[str]:
+    def fetch_with_curl() -> Optional[str]:
+        curl_path = shutil.which("curl") or "/usr/bin/curl"
+        if not curl_path or not Path(curl_path).exists():
+            logger.warning("curl not available for fallback fetch")
+            return None
+        logger.info("Fetching via curl fallback: %s", url)
+        env = os.environ.copy()
+        env["PATH"] = env.get("PATH", "") + ":/usr/bin:/bin"
+        try:
+            curl_cmd = [
+                curl_path,
+                "-Ls",
+                "--max-time",
+                str(int(settings.request_timeout)),
+                "-A",
+                settings.user_agent,
+            ]
+            if (settings.accept_language or "").strip():
+                curl_cmd.extend(["-H", f"Accept-Language: {settings.accept_language}"])
+            curl_cmd.append(url)
+            result = subprocess.run(
+                curl_cmd,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+        except FileNotFoundError:
+            logger.warning("curl not available for fallback fetch")
+            return None
+        if result.returncode != 0:
+            message = (result.stderr or "").strip()
+            if message:
+                logger.warning("curl fallback failed for %s: %s", url, message)
+            return None
+        if not (result.stdout or "").strip():
+            logger.warning("curl fallback returned empty response for %s", url)
+            return None
+        return result.stdout or None
+
     retryer = Retrying(
         stop=stop_after_attempt(settings.max_retries),
         wait=wait_exponential(multiplier=1, min=1, max=8),
@@ -236,7 +501,11 @@ def fetch_html(url: str, settings: Settings, logger: logging.Logger) -> Optional
                     headers={
                         "User-Agent": settings.user_agent,
                         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                        "Accept-Language": "en-US,en;q=0.9",
+                        **(
+                            {"Accept-Language": settings.accept_language}
+                            if (settings.accept_language or "").strip()
+                            else {}
+                        ),
                     },
                     timeout=settings.request_timeout,
                 )
@@ -247,10 +516,10 @@ def fetch_html(url: str, settings: Settings, logger: logging.Logger) -> Optional
                 break
     except requests.RequestException as exc:
         logger.warning("Request failed for %s: %s", url, exc)
-        return None
+        return fetch_with_curl()
     if response.status_code >= 400:
         logger.warning("Non-success status %s for %s", response.status_code, url)
-        return None
+        return fetch_with_curl()
     return response.text
 
 
@@ -306,12 +575,14 @@ def _section_lines(text: str, start_keywords: List[str], end_keywords: List[str]
             break
     if start_index is None:
         return []
-    end_index = None
+    section: List[str] = []
     for i in range(start_index + 1, len(lines)):
-        if any(k in lines[i].lower() for k in end_keywords):
-            end_index = i
+        line = lines[i]
+        if _is_section_break(line, end_keywords):
             break
-    section = lines[start_index + 1 : end_index]
+        section.append(line)
+        if len(section) >= 120:
+            break
     return [line for line in section if line]
 
 
@@ -341,9 +612,20 @@ def _fallback_extract_recipe(html: str, source_url: str) -> Recipe:
 
     text = soup.get_text("\n", strip=True)
     if not ingredients:
-        ingredients = _section_lines(text, ["ingredients"], ["instructions", "directions", "method"])
+        ingredients = _section_lines(
+            text,
+            ["ingredients"],
+            ["instructions", "directions", "method", "steps", "notes", "nutrition"],
+        )
     if not instructions:
-        instructions = _section_lines(text, ["instructions", "directions", "method"], ["notes", "nutrition"])
+        instructions = _section_lines(
+            text,
+            ["instructions", "directions", "method", "steps"],
+            ["notes", "nutrition", "faq", "tips", "storage", "serving"],
+        )
+
+    ingredients = _clean_recipe_lines(ingredients, "ingredients", max_items=40)
+    instructions = _clean_recipe_lines(instructions, "instructions", max_items=30)
 
     return Recipe(
         name=_clean_text(title) if title else None,
@@ -483,9 +765,31 @@ def _extract_recipe_with_gpt(
             return None
         if isinstance(value, (int, float)):
             return str(value)
+        if isinstance(value, list):
+            return ", ".join(str(item).strip() for item in value if str(item).strip())
         if isinstance(value, str) and value.strip().lower() in {"not provided", "unknown", "n/a"}:
             return None
         return value
+
+    def normalize_list(value):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        if isinstance(value, str):
+            return [item.strip() for item in value.split("\n") if item.strip()]
+        return [str(value).strip()] if str(value).strip() else []
+
+    cleaned_ingredients = _clean_recipe_lines(
+        normalize_list(payload.get("ingredients")),
+        "ingredients",
+        max_items=40,
+    )
+    cleaned_instructions = _clean_recipe_lines(
+        normalize_list(payload.get("instructions")),
+        "instructions",
+        max_items=30,
+    )
 
     return Recipe(
         name=clean(payload.get("name")),
@@ -494,8 +798,8 @@ def _extract_recipe_with_gpt(
         prep_time=clean(payload.get("prep_time")),
         cook_time=clean(payload.get("cook_time")),
         total_time=clean(payload.get("total_time")),
-        ingredients=payload.get("ingredients") or [],
-        instructions=payload.get("instructions") or [],
+        ingredients=cleaned_ingredients,
+        instructions=cleaned_instructions,
         calories=clean(payload.get("calories")),
         cuisine=clean(payload.get("cuisine")),
         course=clean(payload.get("course")),

@@ -54,7 +54,7 @@ def build_image_prompts(
                 f"{style_anchor}, "
                 f"exact visual consistency for batch reference, "
                 f"no text no words no letters no typography no watermark no logo no branding no labels "
-                f"--ar 3:2 --seed {seed} --quality 5"
+                f"--ar 3:2 --seed {seed} --v 7"
             ),
             "placement": "Top of article (before introduction)",
             "description": "Hero shot of the finished dish - professional food photography",
@@ -76,7 +76,7 @@ def build_image_prompts(
                 f"{style_anchor}, "
                 f"same visual style and batch as featured image for consistency, "
                 f"no text no words no letters no typography no watermark no logo no branding no labels "
-                f"--ar 2:3 --seed {seed} --quality 5"
+                f"--ar 2:3 --seed {seed} --v 7"
             ),
             "placement": "Middle of article (in instructions section)",
             "description": "Professional process photography showing cooking techniques",
@@ -98,7 +98,7 @@ def build_image_prompts(
                 f"{style_anchor}, "
                 f"same visual style and batch as featured image for consistency, "
                 f"no text no words no letters no typography no watermark no logo no branding no labels "
-                f"--ar 2:3 --seed {seed} --quality 5"
+                f"--ar 2:3 --seed {seed} --v 7"
             ),
             "placement": "Before serving section",
             "description": "Professional serving presentation photography",

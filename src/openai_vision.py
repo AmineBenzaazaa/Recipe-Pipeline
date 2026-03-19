@@ -46,6 +46,18 @@ def _validate_prompt_payload(payload: List[dict], focus_keyword: str, style_anch
     return True
 
 
+def _ensure_midjourney_version(payload: List[dict]) -> List[dict]:
+    for item in payload:
+        prompt = item.get("prompt")
+        if not isinstance(prompt, str) or not prompt.strip():
+            continue
+        if re.search(r"\s--v\s+[\d.]+", prompt):
+            item["prompt"] = re.sub(r"\s--v\s+[\d.]+", " --v 7", prompt.strip(), count=1)
+        else:
+            item["prompt"] = f"{prompt.strip()} --v 7"
+    return payload
+
+
 def generate_prompts_from_images(
     image_paths: List[str],
     image_urls: List[str],
@@ -80,6 +92,8 @@ def generate_prompts_from_images(
                 "3. Clean composition, appetizing presentation "
                 "4. High resolution, sharp focus, professional lighting "
                 "5. Restaurant-quality styling, commercial food photography "
+                "6. Avoid any pork, bacon, ham, lard, gelatin, or alcohol references "
+                "7. Use natural ingredient wording without calling out substitutions "
                 "Then output a JSON array with exactly 3 objects that match the schema and text "
                 "templates provided. Use the dish name and focus keyword exactly as given. "
                 "Fill [dish name] with the dish name, and fill {style_anchor} and {seed} with "
@@ -147,4 +161,4 @@ def generate_prompts_from_images(
         logger.warning("Vision prompts failed validation; using template prompts")
         return template_payload
 
-    return payload
+    return _ensure_midjourney_version(payload)

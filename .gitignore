@@ -2,6 +2,7 @@
 # env
 .env
 .env.*
+.secrets/
 
 # macOS
 .DS_Store
@@ -9,3 +10,6 @@
 # Python
 __pycache__/
 *.pyc
+
+# local runtime logs
+logs/

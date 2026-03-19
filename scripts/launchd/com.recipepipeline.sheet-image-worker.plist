@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.recipepipeline.sheet-image-worker</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>/Users/useraccount/Documents/Blogging/RecipePipeline/scripts/run_sheet_image_worker_all_tabs.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/useraccount/Documents/Blogging/RecipePipeline</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>SHEET_POLL_SECONDS</key>
+    <string>20</string>
+    <key>SHEET_LOG_LEVEL</key>
+    <string>INFO</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/useraccount/Documents/Blogging/RecipePipeline/logs/sheet-image-worker.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/useraccount/Documents/Blogging/RecipePipeline/logs/sheet-image-worker.err.log</string>
+</dict>
+</plist>

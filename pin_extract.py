@@ -62,7 +62,19 @@ STOPWORDS = {
     "make",
     "pin",
     "pinterest",
+    "przepis",
+    "przepisy",
+    "latwy",
+    "łatwy",
+    "latwe",
+    "łatwe",
+    "szybki",
+    "szybkie",
+    "domowy",
+    "domowe",
 }
+
+_WORD_RE = re.compile(r"[^\W_]+(?:['’][^\W_]+)?", re.UNICODE)
 
 MAX_HEADINGS = 6
 MAX_PARAGRAPHS = 6
@@ -203,6 +215,66 @@ def normalize_url(raw):
     return value
 
 
+def normalize_request_url(url):
+    if not url:
+        return ""
+    cleaned = url.strip()
+    if not cleaned:
+        return ""
+    parsed = urllib.parse.urlsplit(cleaned)
+    if not parsed.scheme or not parsed.netloc:
+        return cleaned
+    hostname = parsed.hostname or ""
+    if not hostname:
+        return ""
+    if ":" in hostname:
+        host_idna = hostname
+    else:
+        try:
+            host_idna = hostname.encode("idna").decode("ascii")
+        except UnicodeError:
+            return ""
+        if not is_valid_hostname(host_idna):
+            return ""
+    if ":" in host_idna and not host_idna.startswith("["):
+        host_idna = f"[{host_idna}]"
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    userinfo = ""
+    if parsed.username:
+        userinfo = urllib.parse.quote(parsed.username, safe="")
+        if parsed.password is not None:
+            userinfo += ":" + urllib.parse.quote(parsed.password, safe="")
+        userinfo += "@"
+    netloc = f"{userinfo}{host_idna}"
+    if port:
+        netloc = f"{netloc}:{port}"
+    path = urllib.parse.quote(parsed.path, safe="/%:@&=+$,;~*'()")
+    query = urllib.parse.quote(parsed.query, safe="=&%:@/+")
+    fragment = urllib.parse.quote(parsed.fragment, safe="=&%:@/+")
+    return urllib.parse.urlunsplit((parsed.scheme, netloc, path, query, fragment))
+
+
+def is_valid_hostname(hostname):
+    if not hostname:
+        return False
+    trimmed = hostname[:-1] if hostname.endswith(".") else hostname
+    if not trimmed:
+        return False
+    if len(trimmed) > 253:
+        return False
+    for label in trimmed.split("."):
+        if not label or len(label) > 63:
+            return False
+        for ch in label:
+            codepoint = ord(ch)
+            if codepoint <= 32 or codepoint == 127:
+                return False
+    return True
+
+
 def extract_urls_from_text(text):
     return re.findall(r"https?://[^\s\"'<>]+", text)
 
@@ -304,7 +376,7 @@ def normalize_recipe_title(title):
             return True
         if '"' in value or "'" in value:
             return True
-        words = re.findall(r"[A-Za-z0-9]+", value.lower())
+        words = _tokenize_words(value)
         if len(words) > 5 or len(value) > 30:
             return True
         marketing = {
@@ -325,6 +397,14 @@ def normalize_recipe_title(title):
             "treat",
             "treats",
             "recipe",
+            "przepis",
+            "przepisy",
+            "łatwy",
+            "łatwe",
+            "szybki",
+            "szybkie",
+            "domowy",
+            "domowe",
         }
         return any(word in marketing for word in words)
 
@@ -376,13 +456,21 @@ def normalize_recipe_title(title):
                 "treat",
                 "treats",
                 "recipe",
+                "przepis",
+                "przepisy",
+                "łatwy",
+                "łatwe",
+                "szybki",
+                "szybkie",
+                "domowy",
+                "domowe",
             )
         ):
             cleaned = left.strip()
         elif len(cleaned) > 90 and len(left.strip()) >= 12:
             cleaned = left.strip()
 
-    cleaned = re.sub(r"\brecipe\b$", "", cleaned, flags=re.I).strip()
+    cleaned = re.sub(r"\b(?:recipe|przepis|przepisy)\b$", "", cleaned, flags=re.I).strip()
     return cleaned.strip()
 
 
@@ -630,20 +718,38 @@ def call_openai_chat(api_key, model, messages, timeout, temperature, max_tokens)
         },
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            text = resp.read().decode("utf-8", errors="replace")
-            return json.loads(text)
-    except urllib.error.HTTPError as exc:
+    retries = 1
+    for attempt in range(retries + 1):
         try:
-            detail = exc.read().decode("utf-8", errors="replace")
-        except Exception:
-            detail = ""
-        print(f"OpenAI request failed: HTTP {exc.code} {detail}", file=sys.stderr)
-    except urllib.error.URLError as exc:
-        print(f"OpenAI request failed: {exc}", file=sys.stderr)
-    except json.JSONDecodeError:
-        print("OpenAI response was not valid JSON.", file=sys.stderr)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                text = resp.read().decode("utf-8", errors="replace")
+                return json.loads(text)
+        except urllib.error.HTTPError as exc:
+            try:
+                detail = exc.read().decode("utf-8", errors="replace")
+            except Exception:
+                detail = ""
+            print(f"OpenAI request failed: HTTP {exc.code} {detail}", file=sys.stderr)
+            return None
+        except urllib.error.URLError as exc:
+            if attempt < retries:
+                print(
+                    f"OpenAI request failed (attempt {attempt + 1}/{retries + 1}): {exc}; retrying...",
+                    file=sys.stderr,
+                )
+                continue
+            print(f"OpenAI request failed: {exc}", file=sys.stderr)
+        except TimeoutError as exc:
+            if attempt < retries:
+                print(
+                    f"OpenAI request timed out (attempt {attempt + 1}/{retries + 1}); retrying...",
+                    file=sys.stderr,
+                )
+                continue
+            print(f"OpenAI request timed out: {exc}", file=sys.stderr)
+        except json.JSONDecodeError:
+            print("OpenAI response was not valid JSON.", file=sys.stderr)
+            return None
     return None
 
 
@@ -680,14 +786,22 @@ def normalize_openai_keywords(value):
         token = str(item).strip().strip('"').strip("'")
         if not token:
             continue
-        token = token.lower()
-        if len(token) <= 2 or token in STOPWORDS:
+        token = re.sub(r"\s+", " ", token.lower()).strip()
+        if " " not in token and len(token) <= 2:
+            continue
+        if " " not in token and token in STOPWORDS:
             continue
         if token in seen:
             continue
         seen.add(token)
         keywords.append(token)
     return keywords
+
+
+def _tokenize_words(text):
+    if not text:
+        return []
+    return [match.group(0).lower() for match in _WORD_RE.finditer(text)]
 
 
 def build_openai_prompt(context):
@@ -701,6 +815,7 @@ def build_openai_prompt(context):
 
     lines = [
         "You are a smart assistant specialized in food recipes and recipe name detection.",
+        "Pins can be in any language.",
         "",
         "Your job: Extract the EXACT recipe name and a concise keyword list from a Pinterest pin.",
         "",
@@ -734,7 +849,9 @@ def build_openai_prompt(context):
             "3. Ignore generic phrases like \"Pin on Desserts\" or \"Food Ideas\".",
             "4. Remove unnecessary words like Recipe, Easy, Homemade, Best from the recipe name.",
             "5. Output ONLY valid JSON, no commentary or extra text.",
-            "6. Keywords should be 5-12 short terms, lower-case, no duplicates, no generic words.",
+            "6. Keep the recipe name in the original language found in the pin/site context. Do not translate.",
+            "7. Keywords should be 5-12 short terms, lower-case, no duplicates, no generic words.",
+            "8. Keep keywords in the original language when possible (no forced translation).",
             "",
             "Return JSON only, in this exact shape:",
             '{"recipe_name":"...","keywords":["...","..."]}',
@@ -752,7 +869,8 @@ def extract_with_openai(context, api_key, model, timeout, temperature, max_token
             "role": "system",
             "content": (
                 "You are a recipe name detection specialist. "
-                "Extract the exact recipe name and keywords from Pinterest pins."
+                "Extract the exact recipe name and keywords from Pinterest pins. "
+                "Pins may be multilingual; keep outputs in the original language."
             ),
         },
         {"role": "user", "content": prompt},
@@ -775,28 +893,34 @@ def extract_with_openai(context, api_key, model, timeout, temperature, max_token
     return {"recipe_name": recipe_name, "keywords": normalized_keywords}
 
 
-def fetch_url(url, timeout):
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": USER_AGENT,
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
-        },
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        charset = resp.headers.get_content_charset() or "utf-8"
-        body = resp.read()
-        text = body.decode(charset, errors="replace")
-        return resp.getcode(), text
+def fetch_url(url, timeout, accept_language=""):
+    request_url = normalize_request_url(url)
+    if not request_url:
+        raise urllib.error.URLError(f"Invalid URL: {url}")
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
+    }
+    accept_language = (accept_language or "").strip()
+    if accept_language:
+        headers["Accept-Language"] = accept_language
+    req = urllib.request.Request(request_url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            charset = resp.headers.get_content_charset() or "utf-8"
+            body = resp.read()
+            text = body.decode(charset, errors="replace")
+            return resp.getcode(), text
+    except (UnicodeEncodeError, UnicodeError) as exc:
+        raise urllib.error.URLError(f"Invalid URL: {url}") from exc
 
 
-def fetch_pin_api(pin_id, timeout):
+def fetch_pin_api(pin_id, timeout, accept_language=""):
     if not pin_id:
         return None
     api_url = f"https://api.pinterest.com/v3/pidgets/pins/info/?pin_ids={pin_id}"
     try:
-        status, text = fetch_url(api_url, timeout)
+        status, text = fetch_url(api_url, timeout, accept_language)
     except urllib.error.URLError:
         return None
     if status != 200:
@@ -813,7 +937,7 @@ def fetch_pin_api(pin_id, timeout):
     return pins[0]
 
 
-def fetch_pin_resource(pin_id, timeout):
+def fetch_pin_resource(pin_id, timeout, accept_language=""):
     if not pin_id:
         return None
     data = {
@@ -828,7 +952,7 @@ def fetch_pin_resource(pin_id, timeout):
     )
     resource_url = f"https://www.pinterest.com/resource/PinResource/get/?{query}"
     try:
-        status, text = fetch_url(resource_url, timeout)
+        status, text = fetch_url(resource_url, timeout, accept_language)
     except urllib.error.URLError:
         return None
     if status != 200:
@@ -995,9 +1119,9 @@ def _find_recipe_name_from_json(data):
     return ""
 
 
-def extract_title_from_recipe_page(url, timeout):
+def extract_title_from_recipe_page(url, timeout, accept_language=""):
     try:
-        status, html_text = fetch_url(url, timeout)
+        status, html_text = fetch_url(url, timeout, accept_language)
     except urllib.error.URLError:
         return "", "", ""
     if not html_text:
@@ -1102,7 +1226,7 @@ def extract_from_html(html_text, pin_id, base_url):
 def extract_keywords(title):
     if not title:
         return ""
-    tokens = re.findall(r"[A-Za-z0-9']+", title.lower())
+    tokens = _tokenize_words(title)
     keywords = []
     seen = set()
     for token in tokens:
@@ -1242,6 +1366,14 @@ def parse_args():
     parser.add_argument("--no-header", action="store_true", help="Skip header row")
     parser.add_argument("--timeout", type=float, default=20.0, help="HTTP timeout")
     parser.add_argument(
+        "--accept-language",
+        default="",
+        help=(
+            "Optional Accept-Language header for Pinterest and recipe page fetches "
+            "(e.g. 'pl-PL,pl;q=0.9,en;q=0.8'). If empty, no Accept-Language header is sent."
+        ),
+    )
+    parser.add_argument(
         "--openai",
         action="store_true",
         help="Use OpenAI to extract recipe name and keywords",
@@ -1280,6 +1412,14 @@ def parse_args():
 def main():
     args = parse_args()
     load_dotenv()
+    if (args.openai_model or "").strip() in {"", "gpt-3.5-turbo"}:
+        args.openai_model = (
+            os.environ.get("OPENAI_MODEL")
+            or os.environ.get("MODEL_NAME")
+            or args.openai_model
+        )
+    if not args.accept_language:
+        args.accept_language = os.environ.get("PIN_ACCEPT_LANGUAGE", "").strip()
     api_key = ""
     if args.openai:
         api_key = os.environ.get("OPENAI_API_KEY", "")
@@ -1302,12 +1442,12 @@ def main():
         html_text = ""
         html_context = None
 
-        api_data = fetch_pin_api(pin_id, args.timeout)
+        api_data = fetch_pin_api(pin_id, args.timeout, args.accept_language)
         if api_data:
             title, visit_url = extract_fields_from_dict(api_data)
 
         if not title or not visit_url:
-            resource_data = fetch_pin_resource(pin_id, args.timeout)
+            resource_data = fetch_pin_resource(pin_id, args.timeout, args.accept_language)
             if resource_data:
                 resource_title, resource_visit = extract_fields_from_dict(resource_data)
                 if not title:
@@ -1317,7 +1457,7 @@ def main():
 
         if args.openai or not title or not visit_url:
             try:
-                status, html_text = fetch_url(url, args.timeout)
+                status, html_text = fetch_url(url, args.timeout, args.accept_language)
             except urllib.error.URLError as exc:
                 print(f"Fetch failed for {url}: {exc}", file=sys.stderr)
                 html_text = ""
@@ -1335,7 +1475,7 @@ def main():
         site_description = ""
         if visit_url:
             site_recipe_name, site_title, site_description = extract_title_from_recipe_page(
-                visit_url, args.timeout
+                visit_url, args.timeout, args.accept_language
             )
             candidate_title = site_recipe_name or site_title
             candidate_title = normalize_recipe_title(candidate_title)
