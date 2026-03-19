@@ -13,3 +13,20 @@ __pycache__/
 
 # local runtime logs
 logs/
+.venv312/
+venv/
+__pycache__/
+*.pyc
+.env
+node_modules/
+.DS_Store
+
+
+.venv312/
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+.env
+
+midjourney_engine/api/build_files/
