@@ -832,7 +832,7 @@ def maybe_auto_save_sheet_settings(
     credentials_path: str,
     ready_value: str,
 ) -> bool:
-    if not sheet_url or not credentials_path:
+    if not sheet_url:
         return False
     snapshot = (sheet_url, sheet_tab or "", credentials_path, ready_value or "")
     if st.session_state.get("sheet_settings_saved") == snapshot:
