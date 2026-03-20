@@ -6,8 +6,8 @@ import re
 from typing import List
 
 from .config import Settings
-from .formatters import build_image_prompts
 from .openai_client import responses_create_text
+from .prompts.service import build_template_prompt_payload
 
 
 def _encode_image(path: str) -> str:
@@ -72,12 +72,27 @@ def generate_prompts_from_images(
     # Always return template prompts if vision is disabled
     if not settings.use_vision_prompts:
         logger.info("Vision prompts disabled - using template prompts")
-        return build_image_prompts(dish_name, focus_keyword, style_anchor, seed)
+        return build_template_prompt_payload(
+            dish_name=dish_name,
+            focus_keyword=focus_keyword,
+            style_anchor=style_anchor,
+            seed=seed,
+        )
     
     if not settings.openai_api_key:
-        return build_image_prompts(dish_name, focus_keyword, style_anchor, seed)
+        return build_template_prompt_payload(
+            dish_name=dish_name,
+            focus_keyword=focus_keyword,
+            style_anchor=style_anchor,
+            seed=seed,
+        )
     if not image_paths and not image_urls:
-        return build_image_prompts(dish_name, focus_keyword, style_anchor, seed)
+        return build_template_prompt_payload(
+            dish_name=dish_name,
+            focus_keyword=focus_keyword,
+            style_anchor=style_anchor,
+            seed=seed,
+        )
 
     content = [
         {
@@ -121,7 +136,12 @@ def generate_prompts_from_images(
 
     content.extend(image_inputs)
 
-    template_payload = build_image_prompts(dish_name, focus_keyword, style_anchor, seed)
+    template_payload = build_template_prompt_payload(
+        dish_name=dish_name,
+        focus_keyword=focus_keyword,
+        style_anchor=style_anchor,
+        seed=seed,
+    )
     template_json = json.dumps(template_payload, ensure_ascii=True, indent=2)
 
     payload = {

@@ -1,15 +1,8 @@
 import re
 from html import unescape
 
-
-DEFAULT_AR_BY_TYPE = {
-    "featured": "3:2",
-    "instructions_process": "2:3",
-    "instructions-process": "2:3",
-    "serving": "2:3",
-    "wprm_recipecard": "3:2",
-    "wprm-recipecard": "3:2",
-}
+from .prompts.types import prompt_type_aspect_ratio_map
+DEFAULT_AR_BY_TYPE = prompt_type_aspect_ratio_map()
 
 _AR_RE = re.compile(r"(?<!\S)--ar\s+(\d{1,2}:\d{1,2})\b", re.I)
 _SEED_RE = re.compile(r"(?<!\S)--seed\s+(\d{1,12})\b", re.I)

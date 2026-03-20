@@ -5,20 +5,7 @@ from html import unescape
 from typing import Dict
 from urllib.parse import urlparse
 
-
-_CANONICAL_AR_BY_TYPE = {
-    "featured": "3:2",
-    "instructions_process": "2:3",
-    "instructions-process": "2:3",
-    "serving": "2:3",
-    "wprm_recipecard": "3:2",
-    "wprm-recipecard": "3:2",
-}
-
-_TYPE_ALIASES = {
-    "instructions-process": "instructions_process",
-    "wprm-recipecard": "wprm_recipecard",
-}
+from .prompts.types import get_prompt_type_config, normalize_prompt_type
 
 _NEGATIVE_TOKENS = (
     r"\bno text(?: overlay)?\b",
@@ -159,7 +146,8 @@ def apply_pinterest_ctr_rules(prompt_map: dict[str, str]) -> dict[str, str]:
 
 def _apply_prompt_rules(prompt: str, prompt_type: str) -> str:
     reference_url, body, params = _split_prompt(prompt)
-    canonical_type = _canonical_type(prompt_type)
+    canonical_type = normalize_prompt_type(prompt_type)
+    config = get_prompt_type_config(prompt_type)
     had_food_safety = _has_food_safety_clause(body)
 
     body = _strip_params(body)
@@ -205,7 +193,7 @@ def _apply_prompt_rules(prompt: str, prompt_type: str) -> str:
 
     clauses.append(_color_clause(canonical_type, body))
 
-    if canonical_type != "wprm_recipecard":
+    if config.rewrite_intensity != "light":
         clauses.append(
             "commercial food blog quality, highly realistic, natural appetizing lighting, visually striking but believable"
         )
@@ -225,12 +213,6 @@ def _apply_prompt_rules(prompt: str, prompt_type: str) -> str:
     if suffix:
         result = f"{result} {suffix}".strip()
     return result
-
-
-def _canonical_type(prompt_type: str) -> str:
-    raw = (prompt_type or "").strip().lower()
-    return _TYPE_ALIASES.get(raw, raw)
-
 
 def _split_prompt(prompt: str) -> tuple[str, str, dict[str, str]]:
     text = _normalize_whitespace(unescape(str(prompt)))
@@ -375,8 +357,9 @@ def _normalize_whitespace(text: str) -> str:
 def _build_suffix(prompt_type: str, params: dict[str, str]) -> str:
     parts = []
     current_ar = params.get("ar", "")
-    canonical_ar = _CANONICAL_AR_BY_TYPE.get(prompt_type, "")
-    if prompt_type == "wprm_recipecard":
+    config = get_prompt_type_config(prompt_type)
+    canonical_ar = config.aspect_ratio
+    if config.rewrite_intensity == "light":
         ar_value = current_ar or canonical_ar
     else:
         ar_value = canonical_ar or current_ar
