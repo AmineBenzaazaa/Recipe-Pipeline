@@ -4,6 +4,10 @@ from src.prompts.service import (
     finalize_prompt_bundle,
     finalize_prompt_map,
 )
+from src.config import Settings
+from src.formatters import build_image_prompts
+from src.midjourney_prompts import generate_template_prompts
+from src.models import Recipe
 
 
 def test_shared_template_payload_and_bundle_use_same_source():
@@ -61,3 +65,20 @@ def test_finalize_prompt_bundle_returns_typed_specs():
         "serving",
     ]
     assert all("--v 7" in item.finalized_prompt_text for item in specs)
+
+
+def test_legacy_template_wrappers_share_the_same_template_source():
+    formatters_payload = build_image_prompts(
+        "Blueberry Muffins",
+        "blueberry muffins",
+        "Shared visual anchor",
+        77,
+    )
+    midjourney_payload = generate_template_prompts(
+        Recipe(name="Blueberry Muffins"),
+        "blueberry muffins",
+        Settings(style_anchor="Shared visual anchor"),
+        77,
+    )
+
+    assert formatters_payload == midjourney_payload
