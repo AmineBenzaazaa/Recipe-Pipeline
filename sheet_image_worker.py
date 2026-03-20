@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 from src.config import load_settings
 from src.image_generator import _upload_to_cloudinary
 from src.imagineapi_client import ensure_imagineapi_ready
-from src.midjourney_prompt_sanitizer import sanitize_midjourney_prompt
+from src.prompts.service import finalize_prompt_text
 
 REQUIRED_IMAGE_COLUMNS = [
     "featured_image_prompt",
@@ -313,7 +313,7 @@ def _generate_u2_cloudinary_url(
     settings,
     logger: logging.Logger,
 ) -> str:
-    prompt = sanitize_midjourney_prompt(prompt, image_type)
+    prompt = finalize_prompt_text(prompt, image_type, sanitize=True)
     image_id = _create_imagineapi_job(base_url, token, prompt, request_timeout)
     logger.info("Created image job %s (%s)", image_id, image_type)
 

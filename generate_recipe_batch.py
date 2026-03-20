@@ -33,13 +33,13 @@ from src.formatters import (
 from src.halal import make_recipe_halal, sanitize_text_halal
 from src.image_generator import generate_prompt_images
 from src.imagineapi_client import generate_imagineapi_images
-from src.midjourney_prompt_sanitizer import sanitize_midjourney_prompt
 from src.openai_vision import generate_prompts_from_images
 from src.midjourney_prompts import generate_midjourney_prompts_gpt, generate_template_prompts
 from src.model_routing import evaluate_row_quality, resolve_model_fallback_config
 from src.output_language import localize_output_row, resolve_output_language
 from src.openai_client import responses_create_text
 from src.models import Recipe
+from src.prompts.service import finalize_prompt_map
 from src.midjourney_client import (
     MidjourneyQueueRunner,
     generate_midjourney_images,
@@ -549,6 +549,7 @@ def _process_recipe(
             recipe_text_formatted,
             settings,
             logger,
+            seed=seed,
         )
     else:
         # Fallback to template-based or vision-based prompts
@@ -630,21 +631,20 @@ def _process_recipe(
         settings.request_timeout,
         logger,
     )
-    if validated_prompt_image_url:
-        featured_prompt = _prefix_prompt_with_image_url(
-            featured_prompt, validated_prompt_image_url
-        )
-        serving_prompt = _prefix_prompt_with_image_url(
-            serving_prompt, validated_prompt_image_url
-        )
-        wprm_prompt = _prefix_prompt_with_image_url(wprm_prompt, validated_prompt_image_url)
-
-    featured_prompt = sanitize_midjourney_prompt(featured_prompt, "featured")
-    instructions_prompt = sanitize_midjourney_prompt(
-        instructions_prompt, "instructions_process"
+    prompt_text_map = finalize_prompt_map(
+        {
+            "featured": featured_prompt,
+            "instructions_process": instructions_prompt,
+            "serving": serving_prompt,
+            "wprm_recipecard": wprm_prompt,
+        },
+        reference_image_url=validated_prompt_image_url,
+        sanitize=True,
     )
-    serving_prompt = sanitize_midjourney_prompt(serving_prompt, "serving")
-    wprm_prompt = sanitize_midjourney_prompt(wprm_prompt, "wprm_recipecard")
+    featured_prompt = prompt_text_map.get("featured", "")
+    instructions_prompt = prompt_text_map.get("instructions_process", "")
+    serving_prompt = prompt_text_map.get("serving", "")
+    wprm_prompt = prompt_text_map.get("wprm_recipecard", "")
     
     # Generate images only if enabled in settings
     if settings.generate_images:

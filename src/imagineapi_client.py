@@ -12,6 +12,7 @@ from tenacity import Retrying, retry_if_exception_type, stop_after_attempt, wait
 
 from .config import Settings
 from .midjourney_prompt_sanitizer import sanitize_midjourney_prompt
+from .prompts.types import PROMPT_TYPE_ORDER
 
 
 def _normalize_base_url(value: str) -> str:
@@ -309,7 +310,7 @@ def generate_imagineapi_images(
     settings: Settings,
     logger: logging.Logger,
 ) -> Dict[str, str]:
-    ordered_keys = ["featured", "instructions_process", "serving", "wprm_recipecard"]
+    ordered_keys = list(PROMPT_TYPE_ORDER)
     results = {key: "" for key in ordered_keys}
 
     if not ensure_imagineapi_ready(settings, logger):

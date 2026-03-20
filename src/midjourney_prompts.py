@@ -15,6 +15,7 @@ from .midjourney_prompt_sanitizer import sanitize_midjourney_prompt
 from .models import Recipe
 from .openai_client import responses_create_text
 from .prompts.service import build_template_prompt_payload
+from .prompts.types import PROMPT_TYPE_ORDER
 
 
 def generate_random_seed() -> int:
@@ -54,7 +55,7 @@ def generate_midjourney_prompts_gpt(
     seed: Optional[int] = None,
 ) -> List[Dict]:
     """
-    Generate 3 Midjourney image prompts using GPT analysis (legacy approach).
+    Generate 3 Pinterest-first image prompts using GPT analysis.
 
     Returns:
         List of 3 prompt dictionaries (featured, instructions_process, serving)
@@ -82,9 +83,9 @@ Instructions: {', '.join(recipe.instructions[:5]) if recipe.instructions else 'F
 """
 
     prompt = f"""
-You are a professional food photography director and SEO expert specializing in MidJourney prompts.
+You are a professional food photography director and SEO expert specializing in Pinterest recipe image prompts for ChatGPT image generation.
 
-Analyze this recipe article and generate exactly 3 MidJourney image prompts with comprehensive SEO metadata:
+Analyze this recipe article and generate exactly 3 image prompts with comprehensive SEO metadata:
 
 Article Topic: {recipe.name or focus_keyword}
 Focus Keyword: {focus_keyword}
@@ -117,7 +118,7 @@ STRICT RULES FOR IMAGE GENERATION:
 - Professional magazine-quality food photography.
 
 For each image, provide:
-- A detailed MidJourney prompt with style anchor and seed
+- A detailed image prompt with style anchor and seed
 - Exact placement location in the article
 - Brief description of what the image shows
 - Complete SEO metadata (alt text, filename, caption, description)
@@ -145,7 +146,7 @@ Output ONLY JSON.
                     "role": "system",
                     "content": (
                         "You are a professional food photography director. "
-                        "Generate detailed MidJourney prompts with exact placement metadata. "
+                        "Generate detailed Pinterest-first recipe image prompts with exact placement metadata. "
                         "Output JSON only."
                     ),
                 },
@@ -197,7 +198,7 @@ def _normalize_gpt_images_payload(
         return template_payload, "Invalid template payload"
 
     template_by_type = {item.get("type"): item for item in template_payload}
-    ordered_types = ["featured", "instructions_process", "serving"]
+    ordered_types = list(PROMPT_TYPE_ORDER[:3])
 
     if isinstance(data, dict):
         images = data.get("images") or data.get("data") or data.get("prompts")
