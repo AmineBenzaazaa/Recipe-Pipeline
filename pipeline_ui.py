@@ -24,7 +24,11 @@ from src.output_language import (
     parse_site_language_map,
     resolve_output_language,
 )
-from src.sheets_client import list_sheet_worksheets
+from src.sheets_client import (
+    google_credentials_configured,
+    list_sheet_worksheets,
+    load_google_credentials_from_streamlit_secrets,
+)
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -935,9 +939,9 @@ def reset_midjourney_session() -> Dict[str, List[str] | str]:
 
 
 def maybe_load_sheet_tabs(sheet_url: str, credentials_path: str) -> None:
-    if not sheet_url or not credentials_path:
+    if not sheet_url or not google_credentials_configured(credentials_path):
         return
-    source = (sheet_url, credentials_path)
+    source = (sheet_url, credentials_path, google_credentials_configured(credentials_path))
     if st.session_state.get("sheet_tabs_source") == source and st.session_state.get("sheet_tabs"):
         return
     try:
@@ -956,6 +960,14 @@ def maybe_set_default_sheet_credentials_path() -> None:
         return
     if DEFAULT_SHEET_CREDENTIALS_PATH.exists():
         st.session_state["sheet_credentials_path"] = str(DEFAULT_SHEET_CREDENTIALS_PATH)
+
+
+def sync_google_credentials_env_from_streamlit_secrets() -> bool:
+    info = load_google_credentials_from_streamlit_secrets()
+    if not info:
+        return False
+    os.environ["GOOGLE_SHEET_CREDENTIALS_INFO"] = json.dumps(info)
+    return True
 
 
 def upsert_site_language_map(raw_map: str, site_key: str, language_code: str) -> str:
@@ -1150,6 +1162,7 @@ def render_pins_page() -> None:
             )
     initialize_site_language_map_session(env_defaults)
     maybe_set_default_sheet_credentials_path()
+    using_streamlit_sheet_secrets = sync_google_credentials_env_from_streamlit_secrets()
     apply_pending_site_language_map_update()
     apply_language_settings_to_env(
         st.session_state.get("output_language_override", ""),
@@ -1242,8 +1255,11 @@ def render_pins_page() -> None:
 
         st.markdown("**Step 2 Sheet Target**")
         sheet_url = st.text_input("Google Sheet URL", key="sheet_url")
+        if using_streamlit_sheet_secrets:
+            st.info("Using `st.secrets[\"gcp_service_account\"]` for Google Sheets auth.")
+        st.caption("Local JSON upload/path is optional and intended for development fallback only.")
         credentials_upload = st.file_uploader(
-            "Service account JSON",
+            "Service account JSON (local fallback)",
             type=["json"],
             key="sheet_credentials_upload",
         )
@@ -1254,11 +1270,11 @@ def render_pins_page() -> None:
             st.session_state["sheet_credentials_path"] = str(DEFAULT_SHEET_CREDENTIALS_PATH)
             st.info(f"Saved credentials to {DEFAULT_SHEET_CREDENTIALS_PATH}")
         sheet_credentials_path = st.text_input(
-            "Credentials path",
+            "Credentials path (local fallback)",
             key="sheet_credentials_path",
         )
         maybe_load_sheet_tabs(sheet_url, sheet_credentials_path)
-        load_tabs_disabled = not (sheet_url and sheet_credentials_path)
+        load_tabs_disabled = not (sheet_url and google_credentials_configured(sheet_credentials_path))
         if st.button("Reload sheet tabs", disabled=load_tabs_disabled):
             try:
                 st.session_state["sheet_tabs"] = list_sheet_worksheets(
@@ -1273,10 +1289,12 @@ def render_pins_page() -> None:
                 st.error(f"Failed to load worksheet list: {exc}")
         if st.session_state.get("sheet_tabs_error"):
             st.warning(f"Sheet tabs could not be loaded: {st.session_state['sheet_tabs_error']}")
-        elif sheet_url and sheet_credentials_path and not st.session_state["sheet_tabs"]:
+        elif sheet_url and google_credentials_configured(sheet_credentials_path) and not st.session_state["sheet_tabs"]:
             st.caption("No tabs loaded yet. Click `Reload sheet tabs` or verify sheet permissions/credentials.")
-        elif not sheet_url or not sheet_credentials_path:
-            st.caption("Add a Google Sheet URL and credentials path to load a tab dropdown.")
+        elif not sheet_url:
+            st.caption("Add a Google Sheet URL to load a tab dropdown.")
+        else:
+            st.caption("Configure `st.secrets[\"gcp_service_account\"]` or provide a local credentials file.")
         if st.session_state["sheet_tabs"]:
             sheet_tab = st.selectbox(
                 "Worksheet/tab",
@@ -1421,8 +1439,11 @@ def render_pins_page() -> None:
                         st.error("Output path must be a file, not a directory. Please specify a CSV filename.")
                     else:
                         can_run = True
-                        if sheet_url and not sheet_credentials_path:
-                            st.error("Google Sheet URL provided but credentials JSON is missing.")
+                        if sheet_url and not google_credentials_configured(sheet_credentials_path):
+                            st.error(
+                                "Google Sheet URL provided but Google credentials are not configured. "
+                                "Set `st.secrets[\"gcp_service_account\"]` or provide a local JSON file."
+                            )
                             can_run = False
                         if not overwrite_output and output_path.exists():
                             st.warning(
@@ -1735,6 +1756,7 @@ def render_keywords_page() -> None:
     initialize_site_language_map_session(env_defaults)
 
     maybe_set_default_sheet_credentials_path()
+    using_streamlit_sheet_secrets = sync_google_credentials_env_from_streamlit_secrets()
     apply_pending_site_language_map_update()
     apply_language_settings_to_env(
         st.session_state.get("output_language_override", ""),
@@ -1837,8 +1859,11 @@ def render_keywords_page() -> None:
 
         st.markdown("**Step 2 Sheet Target**")
         sheet_url = st.text_input("Google Sheet URL", key="sheet_url")
+        if using_streamlit_sheet_secrets:
+            st.info("Using `st.secrets[\"gcp_service_account\"]` for Google Sheets auth.")
+        st.caption("Local JSON upload/path is optional and intended for development fallback only.")
         credentials_upload = st.file_uploader(
-            "Service account JSON",
+            "Service account JSON (local fallback)",
             type=["json"],
             key="kw_sheet_credentials_upload",
         )
@@ -1849,11 +1874,11 @@ def render_keywords_page() -> None:
             st.session_state["sheet_credentials_path"] = str(DEFAULT_SHEET_CREDENTIALS_PATH)
             st.info(f"Saved credentials to {DEFAULT_SHEET_CREDENTIALS_PATH}")
         sheet_credentials_path = st.text_input(
-            "Credentials path",
+            "Credentials path (local fallback)",
             key="sheet_credentials_path",
         )
         maybe_load_sheet_tabs(sheet_url, sheet_credentials_path)
-        load_tabs_disabled = not (sheet_url and sheet_credentials_path)
+        load_tabs_disabled = not (sheet_url and google_credentials_configured(sheet_credentials_path))
         if st.button("Reload sheet tabs", disabled=load_tabs_disabled, key="kw_reload_sheet_tabs"):
             try:
                 st.session_state["sheet_tabs"] = list_sheet_worksheets(
@@ -1868,10 +1893,12 @@ def render_keywords_page() -> None:
                 st.error(f"Failed to load worksheet list: {exc}")
         if st.session_state.get("sheet_tabs_error"):
             st.warning(f"Sheet tabs could not be loaded: {st.session_state['sheet_tabs_error']}")
-        elif sheet_url and sheet_credentials_path and not st.session_state["sheet_tabs"]:
+        elif sheet_url and google_credentials_configured(sheet_credentials_path) and not st.session_state["sheet_tabs"]:
             st.caption("No tabs loaded yet. Click `Reload sheet tabs` or verify sheet permissions/credentials.")
-        elif not sheet_url or not sheet_credentials_path:
-            st.caption("Add a Google Sheet URL and credentials path to load a tab dropdown.")
+        elif not sheet_url:
+            st.caption("Add a Google Sheet URL to load a tab dropdown.")
+        else:
+            st.caption("Configure `st.secrets[\"gcp_service_account\"]` or provide a local credentials file.")
         if st.session_state["sheet_tabs"]:
             sheet_tab = st.selectbox(
                 "Worksheet/tab",
@@ -2039,8 +2066,11 @@ def render_keywords_page() -> None:
                         st.error("Output path must be a file, not a directory. Please specify a CSV filename.")
                     else:
                         can_run = True
-                        if sheet_url and not sheet_credentials_path:
-                            st.error("Google Sheet URL provided but credentials JSON is missing.")
+                        if sheet_url and not google_credentials_configured(sheet_credentials_path):
+                            st.error(
+                                "Google Sheet URL provided but Google credentials are not configured. "
+                                "Set `st.secrets[\"gcp_service_account\"]` or provide a local JSON file."
+                            )
                             can_run = False
                         if not overwrite_output and output_path.exists():
                             st.warning(

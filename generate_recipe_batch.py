@@ -45,7 +45,7 @@ from src.midjourney_client import (
     generate_midjourney_images,
     generate_midjourney_images_queue,
 )
-from src.sheets_client import GoogleSheetWriter
+from src.sheets_client import GoogleSheetWriter, google_credentials_configured
 
 DEFAULT_HEADERS = [
     "focus_keyword",
@@ -854,8 +854,11 @@ def main() -> int:
         sheet_ready_value = "ready"
     sheet_writer = None
     if sheet_url:
-        if not sheet_credentials:
-            logger.error("Google Sheet credentials path is required when --sheet-url is set")
+        if not google_credentials_configured(sheet_credentials):
+            logger.error(
+                "Google credentials are not configured. "
+                "Set st.secrets['gcp_service_account'] or provide GOOGLE_SHEET_CREDENTIALS for local development."
+            )
             return 1
         try:
             sheet_writer = GoogleSheetWriter(
