@@ -48,3 +48,22 @@ def test_validated_prompt_image_url_accepts_reachable_image(monkeypatch):
     )
 
     assert result == "https://example.com/source.jpg"
+
+
+def test_default_headers_include_ingredients_and_pin_columns():
+    assert "ingredients_image_prompt" in batch.DEFAULT_HEADERS
+    assert "pin_image_prompt" in batch.DEFAULT_HEADERS
+    assert "ingredients_image_generated_url" in batch.DEFAULT_HEADERS
+    assert "pin_image_generated_url" in batch.DEFAULT_HEADERS
+
+
+def test_apply_image_aliases_adds_ingredients_and_pin_aliases():
+    row = {
+        "ingredients_image_generated_url": "https://cdn.example/ingredients.png",
+        "pin_image_generated_url": "https://cdn.example/pin.png",
+    }
+
+    batch._apply_image_aliases(row)
+
+    assert row["ingredients_image_url"] == "https://cdn.example/ingredients.png"
+    assert row["pin_image_url"] == "https://cdn.example/pin.png"

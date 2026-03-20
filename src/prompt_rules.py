@@ -188,8 +188,34 @@ def _apply_prompt_rules(prompt: str, prompt_type: str) -> str:
                 "clean but slightly imperfect real-kitchen realism",
             ]
         )
+    elif canonical_type == "ingredients":
+        clauses.extend(
+            [
+                "vertical Pinterest ingredients image",
+                "ingredients arranged neatly with balanced spacing and clean visual separation",
+                "clean neutral marble or lightly textured surface with minimal clutter",
+                "easy to read visually at mobile size",
+            ]
+        )
+    elif canonical_type == "pin":
+        clauses.extend(
+            [
+                "full Pinterest recipe pin image",
+                "designed for maximum mobile CTR with strong visual hierarchy",
+                "dominant hero food image with a supporting inset or secondary food detail",
+                "clear collage hierarchy with the hero food first and supporting image second",
+                "premium Pinterest recipe graphic feel with highly realistic food photography",
+            ]
+        )
     elif canonical_type == "wprm_recipecard":
         clauses.append("clean food-forward recipe card image with clear visibility of the finished dish")
+
+    if config.aggressive_ctr and canonical_type not in {"pin", "wprm_recipecard"}:
+        clauses.append("designed for strong Pinterest click appeal and clear mobile readability")
+    if config.aggressive_food_dominance and canonical_type not in {"instructions_process", "wprm_recipecard"}:
+        clauses.append("the hero food should clearly dominate the composition")
+    if config.overlay_text_space:
+        clauses.append("reserve a clean uncluttered title overlay area for later text without placing text in the image")
 
     clauses.append(_color_clause(canonical_type, body))
 
@@ -298,25 +324,61 @@ def _has_food_safety_clause(text: str) -> bool:
 def _color_clause(prompt_type: str, body: str) -> str:
     lowered = (body or "").lower()
     if any(token in lowered for token in _PASTEL_HINTS) and any(token in lowered for token in _DESSERT_HINTS):
+        if prompt_type == "pin":
+            return (
+                "bright, appetizing, natural-looking pastel color with vivid but believable spring dessert accents and strong Pinterest-friendly collage color separation"
+            )
+        if prompt_type == "ingredients":
+            return (
+                "bright, appetizing, natural-looking pastel ingredient color with clean separation between frosting, fruit, candy accents, and baking ingredients"
+            )
         return (
             "bright, appetizing, natural-looking pastel color with vivid but believable dessert accents and clean topping color separation"
         )
     if any(token in lowered for token in _BAKED_HINTS):
+        if prompt_type == "pin":
+            return (
+                "richer warm golden tones with bold but believable Pinterest-friendly color separation between crust, crumb, frosting, and toppings"
+            )
         return (
             "richer warm golden tones, glossy natural highlights, and clear color contrast between crust, crumb, frosting, and toppings"
         )
     if any(token in lowered for token in ("fruit", "berry", "berries", "strawberry", "blueberry", "raspberry", "citrus", "lemon", "orange")):
+        if prompt_type == "ingredients":
+            return (
+                "bright appetizing natural ingredient color with clean fruit separation and attractive contrast between produce, toppings, and supporting ingredients"
+            )
+        if prompt_type == "pin":
+            return (
+                "bright appetizing natural color with more visually striking Pinterest-friendly separation between hero food, fruit accents, frosting, and toppings"
+            )
         return (
             "bright appetizing natural color with clean fruit and topping contrast and more visually striking Pinterest-friendly color separation"
         )
     if any(token in lowered for token in _DESSERT_HINTS):
+        if prompt_type == "ingredients":
+            return (
+                "bright appetizing dessert ingredient color with clean visual separation between crumb mix, frosting, fillings, fruit, and toppings"
+            )
+        if prompt_type == "pin":
+            return (
+                "bright appetizing dessert color with glossy natural highlights and stronger Pinterest-friendly contrast between crumb, filling, frosting, and toppings"
+            )
         return (
             "bright appetizing dessert color, glossy natural highlights, and clear color contrast between crumb, filling, frosting, and toppings"
         )
     if any(token in lowered for token in _SAVORY_HINTS):
         if prompt_type == "instructions_process":
             return "clean, lively ingredient color with believable contrast and fresh supporting accents"
+        if prompt_type == "ingredients":
+            return "clean natural ingredient color with balanced spacing, clear separation, and believable contrast"
+        if prompt_type == "pin":
+            return "clean appetizing natural color contrast with stronger Pinterest-friendly hierarchy and fresh garnish accents where appropriate"
         return "clean appetizing natural color contrast with fresh garnish accents and richer warm highlights where appropriate"
+    if prompt_type == "pin":
+        return "more visually striking Pinterest-friendly color separation with bold but believable contrast and premium commercial food styling"
+    if prompt_type == "ingredients":
+        return "attractive natural ingredient color with clean separation, balanced spacing, and easy visual readability"
     if prompt_type == "instructions_process":
         return "attractive natural ingredient color with lively but believable contrast"
     return "strong natural-looking color contrast with clean, scroll-stopping but believable food presentation"

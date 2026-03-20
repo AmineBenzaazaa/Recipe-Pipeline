@@ -104,8 +104,8 @@ class _GridWorksheet:
         return _Cell(value)
 
 
-def _headers():
-    return [
+def _headers(include_optional: bool = False):
+    headers = [
         "status",
         "featured_image_prompt",
         "featured_image_generated_url",
@@ -114,6 +114,16 @@ def _headers():
         "serving_image_prompt",
         "serving_image_generated_url",
     ]
+    if include_optional:
+        headers.extend(
+            [
+                "ingredients_image_prompt",
+                "ingredients_image_generated_url",
+                "pin_image_prompt",
+                "pin_image_generated_url",
+            ]
+        )
+    return headers
 
 
 def _settings():
@@ -204,6 +214,22 @@ def test_resolve_column_indices_uses_fallback_status_header():
     assert missing == []
     assert status_used == "Ready"
     assert col_indices["status"] == 0
+
+
+def test_resolve_column_indices_includes_optional_prompt_columns_when_present():
+    logger = logging.getLogger("sheet_image_worker_test")
+
+    col_indices, missing, _status_used = _resolve_column_indices(
+        headers=_headers(include_optional=True),
+        status_column_name="status",
+        logger=logger,
+    )
+
+    assert missing == []
+    assert "ingredients_image_prompt" in col_indices
+    assert "ingredients_image_generated_url" in col_indices
+    assert "pin_image_prompt" in col_indices
+    assert "pin_image_generated_url" in col_indices
 
 
 def test_discover_target_worksheets_returns_all_tabs_when_enabled():
@@ -435,3 +461,66 @@ def test_process_generate_rows_skips_non_stale_generating_row(monkeypatch):
     assert matched == 0
     assert completed == 0
     assert called["value"] == 0
+
+
+def test_process_generate_rows_updates_optional_ingredients_and_pin_images(monkeypatch):
+    logger = logging.getLogger("sheet_image_worker_test")
+    headers = _headers(include_optional=True)
+    worksheet = _GridWorksheet(
+        "Tab1",
+        [
+            headers,
+            [
+                "Generate",
+                "featured prompt",
+                "",
+                "instructions prompt",
+                "",
+                "serving prompt",
+                "",
+                "ingredients prompt",
+                "",
+                "pin prompt",
+                "",
+            ],
+        ],
+    )
+    monkeypatch.setattr(worker.time, "time", lambda: 1700000000.0)
+    monkeypatch.setattr(worker.time, "sleep", lambda *_: None)
+
+    generated = []
+
+    def _fake_generate(**kwargs):
+        generated.append(kwargs["image_type"])
+        return f"https://cdn.example/{kwargs['image_type']}.png"
+
+    monkeypatch.setattr(worker, "_generate_u2_cloudinary_url", _fake_generate)
+
+    matched, completed = worker._process_generate_rows(
+        worksheet=worksheet,
+        headers=headers,
+        status_col=0,
+        featured_prompt_col=1,
+        featured_url_col=2,
+        instructions_prompt_col=3,
+        instructions_url_col=4,
+        serving_prompt_col=5,
+        serving_url_col=6,
+        generate_value="Generate",
+        generating_value="Generating",
+        ready_value="Ready",
+        settings=_settings(),
+        upscale_index=2,
+        timeout_seconds=30,
+        logger=logger,
+        max_rows=0,
+        enable_row_claim=True,
+        claim_worker_id="worker-a",
+        claim_settle_seconds=0.0,
+        generating_stale_seconds=900,
+        optional_image_columns={"ingredients": (7, 8), "pin": (9, 10)},
+    )
+
+    assert matched == 1
+    assert completed == 1
+    assert generated == ["featured", "instructions-process", "serving", "ingredients", "pin"]
