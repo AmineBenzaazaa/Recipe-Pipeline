@@ -46,3 +46,31 @@ def test_wprm_rules_are_light_touch_and_keep_existing_ratio():
     assert "--ar 4:5" in updated
     assert "--seed 9" in updated
     assert "no text, no watermark, no labels, no branding, no packaging, no CGI, no synthetic texture" in updated
+
+
+def test_ingredients_rules_use_neat_vertical_layout_language():
+    prompt = (
+        "Ingredients flat lay for Easter sugar cookies with frosting and sprinkles, "
+        "Pinterest viral, no text no watermark --seed 55"
+    )
+
+    updated = apply_pinterest_ctr_rules({"ingredients": prompt})["ingredients"]
+
+    assert "ingredients arranged neatly with balanced spacing" in updated
+    assert "easy to read visually at mobile size" in updated
+    assert "bright, appetizing, natural-looking pastel ingredient color" in updated
+    assert "--ar 2:3" in updated
+    assert "--seed 55" in updated
+
+
+def test_pin_rules_add_overlay_zone_and_mobile_ctr_language():
+    prompt = "Recipe collage for strawberry cheesecake bars, Pinterest viral, no words --seed 14"
+
+    updated = apply_pinterest_ctr_rules({"pin": prompt})["pin"]
+
+    assert "designed for maximum mobile CTR with strong visual hierarchy" in updated
+    assert "clear collage hierarchy with the hero food first" in updated
+    assert "reserve a clean uncluttered title overlay area" in updated
+    assert "Pinterest viral" not in updated
+    assert "--ar 2:3" in updated
+    assert "--seed 14" in updated

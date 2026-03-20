@@ -29,6 +29,11 @@ REQUIRED_IMAGE_COLUMNS = [
     "serving_image_generated_url",
 ]
 
+OPTIONAL_IMAGE_COLUMNS = [
+    ("ingredients", "ingredients_image_prompt", "ingredients_image_generated_url"),
+    ("pin", "pin_image_prompt", "pin_image_generated_url"),
+]
+
 
 def _setup_logger(level: str) -> logging.Logger:
     logging.basicConfig(
@@ -502,6 +507,13 @@ def _resolve_column_indices(
         else:
             col_indices[header] = idx
 
+    for _image_type, prompt_header, url_header in OPTIONAL_IMAGE_COLUMNS:
+        prompt_idx = _find_header_index(headers, prompt_header)
+        url_idx = _find_header_index(headers, url_header)
+        if prompt_idx is not None and url_idx is not None:
+            col_indices[prompt_header] = prompt_idx
+            col_indices[url_header] = url_idx
+
     return col_indices, missing, status_used
 
 
@@ -540,6 +552,7 @@ def _process_generate_rows(
     claim_worker_id: str,
     claim_settle_seconds: float,
     generating_stale_seconds: int,
+    optional_image_columns: Optional[Dict[str, Tuple[int, int]]] = None,
 ) -> Tuple[int, int]:
     values = worksheet.get_all_values()
     data_rows = values[1:] if values else []
@@ -685,6 +698,30 @@ def _process_generate_rows(
                 _batch_update_cells(worksheet, row_index, [(serving_url_col, serving_url)])
                 logger.info("Row %s serving image updated", row_index)
 
+            for image_type, column_pair in (optional_image_columns or {}).items():
+                prompt_col, url_col = column_pair
+                extra_prompt = _read_cell(row, prompt_col)
+                if not extra_prompt:
+                    continue
+                extra_url = _read_cell(row, url_col)
+                if extra_url:
+                    continue
+                extra_url = _generate_u2_cloudinary_url(
+                    prompt=extra_prompt,
+                    image_type=image_type,
+                    focus_keyword=focus_keyword,
+                    base_url=settings.imagine_api_url.rstrip("/"),
+                    token=settings.imagine_api_token,
+                    upscale_index=upscale_index,
+                    poll_seconds=settings.imagine_api_poll_seconds,
+                    timeout_seconds=timeout_seconds,
+                    request_timeout=settings.request_timeout,
+                    settings=settings,
+                    logger=logger,
+                )
+                _batch_update_cells(worksheet, row_index, [(url_col, extra_url)])
+                logger.info("Row %s %s image updated", row_index, image_type)
+
             _batch_update_cells(worksheet, row_index, [(status_col, ready_value)])
             logger.info("Row %s status updated to %s", row_index, ready_value)
             completed += 1
@@ -822,8 +859,8 @@ def main() -> int:
     if args.timeout_seconds <= 0:
         args.timeout_seconds = max(settings.imagine_api_timeout_seconds, 1800)
     if args.generating_stale_seconds <= 0:
-        # Each row can process up to 3 image generations. Keep stale reclaim beyond expected row runtime.
-        args.generating_stale_seconds = max(3600, (args.timeout_seconds * 3) + 300)
+        # Rows always process 3 core images and may also process optional ingredients/pin images.
+        args.generating_stale_seconds = max(3600, (args.timeout_seconds * 5) + 300)
     else:
         args.generating_stale_seconds = max(0, args.generating_stale_seconds)
 
@@ -948,6 +985,15 @@ def main() -> int:
                 if args.max_rows_per_pass > 0:
                     per_tab_limit = max(args.max_rows_per_pass - pass_completed, 0)
 
+                optional_image_columns = {
+                    image_type: (
+                        col_indices[prompt_header],
+                        col_indices[url_header],
+                    )
+                    for image_type, prompt_header, url_header in OPTIONAL_IMAGE_COLUMNS
+                    if prompt_header in col_indices and url_header in col_indices
+                }
+
                 matched, completed = _process_generate_rows(
                     worksheet=worksheet,
                     headers=headers,
@@ -970,6 +1016,7 @@ def main() -> int:
                     claim_worker_id=claim_worker_id,
                     claim_settle_seconds=args.claim_settle_seconds,
                     generating_stale_seconds=args.generating_stale_seconds,
+                    optional_image_columns=optional_image_columns,
                 )
                 pass_tab_count += 1
                 pass_matched += matched

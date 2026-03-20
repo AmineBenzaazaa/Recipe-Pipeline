@@ -4,7 +4,7 @@ import re
 from typing import List
 
 from .models import PromptDraft
-from .types import PROMPT_TYPE_ORDER, get_prompt_type_config
+from .types import get_prompt_type_config, select_prompt_types
 
 
 def build_template_prompt_drafts(
@@ -14,8 +14,14 @@ def build_template_prompt_drafts(
     style_anchor: str,
     seed: int,
     include_recipe_card: bool = False,
+    include_ingredients: bool = False,
+    include_pin: bool = False,
 ) -> List[PromptDraft]:
-    prompt_types = PROMPT_TYPE_ORDER if include_recipe_card else PROMPT_TYPE_ORDER[:3]
+    prompt_types = select_prompt_types(
+        include_recipe_card=include_recipe_card,
+        include_ingredients=include_ingredients,
+        include_pin=include_pin,
+    )
     drafts = []
     for prompt_type in prompt_types:
         config = get_prompt_type_config(prompt_type)
@@ -68,6 +74,23 @@ def _build_prompt_text(
             f"clear texture separation, commercial food blog quality, {anchor}, no text, no watermark, "
             f"no labels, no branding, no packaging --ar 2:3 --seed {seed} --v 7"
         )
+    if prompt_type == "ingredients":
+        return (
+            f"{dish}, vertical Pinterest ingredients image, ingredients arranged neatly with balanced spacing "
+            f"and clear visual separation, clean neutral marble or lightly textured surface, minimal clutter, "
+            f"easy to read visually at a glance, attractive natural ingredient color contrast, "
+            f"commercial food blog quality, {anchor}, no text, no watermark, no labels, no branding, "
+            f"no packaging --ar 2:3 --seed {seed} --v 7"
+        )
+    if prompt_type == "pin":
+        return (
+            f"{dish}, full Pinterest recipe pin image designed for maximum mobile CTR, dominant hero food image "
+            f"with a supporting inset or secondary food detail, clear collage hierarchy with hero food first, "
+            f"clean title overlay area reserved for later text, premium Pinterest recipe graphic feel with highly "
+            f"realistic food photography, vivid but natural appetizing color contrast, commercial food blog quality, "
+            f"{anchor}, no text, no watermark, no labels, no branding, no packaging "
+            f"--ar 2:3 --seed {seed} --v 7"
+        )
     return (
         f"{dish}, clean recipe card support image, natural food detail, simple composition, "
         f"{anchor}, no text, no watermark, no labels, no branding, no packaging "
@@ -82,6 +105,10 @@ def _default_placement(prompt_type: str) -> str:
         return "Middle of article (in instructions section)"
     if prompt_type == "serving":
         return "Before serving section"
+    if prompt_type == "ingredients":
+        return "Near ingredients section"
+    if prompt_type == "pin":
+        return "Pinterest/social promotion asset"
     return "Recipe card area"
 
 
@@ -92,6 +119,10 @@ def _default_description(prompt_type: str) -> str:
         return "Hands preparing the recipe during a clear cooking step"
     if prompt_type == "serving":
         return "Vertical serving image with strong appetite appeal"
+    if prompt_type == "ingredients":
+        return "Vertical ingredients layout with clean spacing and strong readability"
+    if prompt_type == "pin":
+        return "Full Pinterest pin composition with a title overlay zone"
     return "Clean recipe card support image"
 
 
@@ -119,6 +150,20 @@ def _default_seo_metadata(prompt_type: str, dish_name: str, focus_keyword: str) 
             "filename": f"{slug}-serving.jpg",
             "caption": f"Serve and enjoy {dish}",
             "description": f"A serving image of {dish} with strong appetite appeal.",
+        }
+    if prompt_type == "ingredients":
+        return {
+            "alt_text": f"Ingredients for {keyword}",
+            "filename": f"{slug}-ingredients.jpg",
+            "caption": f"Ingredients for {dish}",
+            "description": f"A vertical ingredients layout for {dish} with clear ingredient separation.",
+        }
+    if prompt_type == "pin":
+        return {
+            "alt_text": f"{keyword} Pinterest pin image",
+            "filename": f"{slug}-pin.jpg",
+            "caption": f"{dish} Pinterest pin",
+            "description": f"A full Pinterest pin composition for {dish} with space reserved for title overlay.",
         }
     return {
         "alt_text": f"{keyword} recipe card image",

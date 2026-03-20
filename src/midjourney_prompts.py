@@ -14,8 +14,8 @@ from .config import DEFAULT_STYLE_ANCHOR, Settings
 from .midjourney_prompt_sanitizer import sanitize_midjourney_prompt
 from .models import Recipe
 from .openai_client import responses_create_text
-from .prompts.service import build_template_prompt_payload
-from .prompts.types import PROMPT_TYPE_ORDER
+from .prompts.service import build_prompt_payload
+from .prompts.types import CORE_PROMPT_TYPE_ORDER
 
 
 def generate_random_seed() -> int:
@@ -198,7 +198,7 @@ def _normalize_gpt_images_payload(
         return template_payload, "Invalid template payload"
 
     template_by_type = {item.get("type"): item for item in template_payload}
-    ordered_types = list(PROMPT_TYPE_ORDER[:3])
+    ordered_types = list(CORE_PROMPT_TYPE_ORDER)
 
     if isinstance(data, dict):
         images = data.get("images") or data.get("data") or data.get("prompts")
@@ -243,6 +243,9 @@ def generate_template_prompts(
     focus_keyword: str,
     settings: Settings,
     seed: Optional[int] = None,
+    include_recipe_card: bool = False,
+    include_ingredients: bool = False,
+    include_pin: bool = False,
 ) -> List[Dict]:
     """Generate shared template prompts via the canonical prompt service."""
     if seed is None:
@@ -250,10 +253,13 @@ def generate_template_prompts(
 
     dish_name = recipe.name or focus_keyword or "the dish"
     style_anchor = settings.style_anchor or DEFAULT_STYLE_ANCHOR
-    return build_template_prompt_payload(
+    return build_prompt_payload(
         dish_name=dish_name,
         focus_keyword=focus_keyword,
         style_anchor=style_anchor,
         seed=seed,
+        include_recipe_card=include_recipe_card,
+        include_ingredients=include_ingredients,
+        include_pin=include_pin,
     )
     

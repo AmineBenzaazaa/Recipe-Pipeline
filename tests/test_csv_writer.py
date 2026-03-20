@@ -20,10 +20,14 @@ def test_csv_writer_headers(tmp_path: Path):
         "featured_image_prompt",
         "instructions_process_image_prompt",
         "serving_image_prompt",
+        "ingredients_image_prompt",
+        "pin_image_prompt",
         "WPRM_recipecard_image_prompt",
         "featured_image_generated_url",
         "instructions_process_image_generated_url",
         "serving_image_generated_url",
+        "ingredients_image_generated_url",
+        "pin_image_generated_url",
         "WPRM_recipe)card_url",
     ]
 
@@ -46,11 +50,15 @@ def test_csv_writer_headers(tmp_path: Path):
         "featured_image_prompt": "prompt1",
         "instructions_process_image_prompt": "prompt2",
         "serving_image_prompt": "prompt3",
-        "WPRM_recipecard_image_prompt": "prompt4",
+        "ingredients_image_prompt": "prompt4",
+        "pin_image_prompt": "prompt5",
+        "WPRM_recipecard_image_prompt": "prompt6",
         "featured_image_generated_url": "url1",
         "instructions_process_image_generated_url": "url2",
         "serving_image_generated_url": "url3",
-        "WPRM_recipe)card_url": "url4",
+        "ingredients_image_generated_url": "url4",
+        "pin_image_generated_url": "url5",
+        "WPRM_recipe)card_url": "url6",
     }
 
     append_row(str(output_path), headers, row)

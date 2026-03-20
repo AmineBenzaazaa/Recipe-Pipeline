@@ -17,6 +17,8 @@ def build_template_prompt_bundle(
     style_anchor: str,
     seed: int,
     include_recipe_card: bool = False,
+    include_ingredients: bool = False,
+    include_pin: bool = False,
 ) -> List[PromptDraft]:
     return build_template_prompt_drafts(
         dish_name=dish_name,
@@ -24,6 +26,8 @@ def build_template_prompt_bundle(
         style_anchor=style_anchor,
         seed=seed,
         include_recipe_card=include_recipe_card,
+        include_ingredients=include_ingredients,
+        include_pin=include_pin,
     )
 
 
@@ -34,6 +38,8 @@ def build_template_prompt_payload(
     style_anchor: str,
     seed: int,
     include_recipe_card: bool = False,
+    include_ingredients: bool = False,
+    include_pin: bool = False,
 ) -> List[dict]:
     bundle = build_template_prompt_bundle(
         dish_name=dish_name,
@@ -41,8 +47,52 @@ def build_template_prompt_payload(
         style_anchor=style_anchor,
         seed=seed,
         include_recipe_card=include_recipe_card,
+        include_ingredients=include_ingredients,
+        include_pin=include_pin,
     )
     return [item.to_payload() for item in bundle]
+
+
+def build_prompt_bundle(
+    *,
+    dish_name: str,
+    focus_keyword: str,
+    style_anchor: str,
+    seed: int,
+    include_recipe_card: bool = False,
+    include_ingredients: bool = False,
+    include_pin: bool = False,
+) -> List[PromptDraft]:
+    return build_template_prompt_bundle(
+        dish_name=dish_name,
+        focus_keyword=focus_keyword,
+        style_anchor=style_anchor,
+        seed=seed,
+        include_recipe_card=include_recipe_card,
+        include_ingredients=include_ingredients,
+        include_pin=include_pin,
+    )
+
+
+def build_prompt_payload(
+    *,
+    dish_name: str,
+    focus_keyword: str,
+    style_anchor: str,
+    seed: int,
+    include_recipe_card: bool = False,
+    include_ingredients: bool = False,
+    include_pin: bool = False,
+) -> List[dict]:
+    return build_template_prompt_payload(
+        dish_name=dish_name,
+        focus_keyword=focus_keyword,
+        style_anchor=style_anchor,
+        seed=seed,
+        include_recipe_card=include_recipe_card,
+        include_ingredients=include_ingredients,
+        include_pin=include_pin,
+    )
 
 
 def finalize_prompt_text(

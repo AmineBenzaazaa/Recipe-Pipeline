@@ -59,10 +59,14 @@ DEFAULT_HEADERS = [
     "featured_image_prompt",
     "instructions_process_image_prompt",
     "serving_image_prompt",
+    "ingredients_image_prompt",
+    "pin_image_prompt",
     "WPRM_recipecard_image_prompt",
     "featured_image_generated_url",
     "instructions_process_image_generated_url",
     "serving_image_generated_url",
+    "ingredients_image_generated_url",
+    "pin_image_generated_url",
     "WPRM_recipe)card_url",
 ]
 
@@ -86,6 +90,8 @@ def _apply_image_aliases(row: dict) -> None:
         "featured_image_url": "featured_image_generated_url",
         "instructions_process_image_url": "instructions_process_image_generated_url",
         "serving_image_url": "serving_image_generated_url",
+        "ingredients_image_url": "ingredients_image_generated_url",
+        "pin_image_url": "pin_image_generated_url",
         "WPRM_recipecard_url": "WPRM_recipe)card_url",
     }
     for alias, source in alias_map.items():
@@ -156,6 +162,23 @@ def _prefix_prompt_with_image_url(prompt: str, image_url: str) -> str:
     if cleaned_prompt.startswith("http://") or cleaned_prompt.startswith("https://"):
         return prompt
     return f"{cleaned_url} {cleaned_prompt}"
+
+
+def _resolve_prompt_text(
+    prompt_map: dict,
+    template_prompt_map: dict,
+    prompt_type: str,
+    *aliases: str,
+) -> str:
+    for source_map in (prompt_map, template_prompt_map):
+        for candidate in (prompt_type, *aliases):
+            item = source_map.get(candidate, {})
+            if not isinstance(item, dict):
+                continue
+            prompt = _sanitize_prompt_text(item.get("prompt", ""))
+            if prompt:
+                return prompt
+    return ""
 
 
 def _wait_if_paused(logger: logging.Logger) -> None:
@@ -580,17 +603,58 @@ def _process_recipe(
 
     faq_items = get_faqs(focus_keyword, recipe, settings, logger)
 
+    template_prompts = generate_template_prompts(
+        recipe,
+        focus_keyword,
+        settings,
+        seed,
+        include_recipe_card=True,
+        include_ingredients=True,
+        include_pin=True,
+    )
+    template_prompt_map = {
+        item.get("type"): item for item in template_prompts if isinstance(item, dict)
+    }
     prompt_map = {item.get("type"): item for item in prompts if isinstance(item, dict)}
-    featured_prompt = _sanitize_prompt_text(prompt_map.get("featured", {}).get("prompt", ""))
-    instructions_prompt = _sanitize_prompt_text(
-        prompt_map.get("instructions_process", {}).get("prompt", "")
+    featured_prompt = _resolve_prompt_text(prompt_map, template_prompt_map, "featured")
+    instructions_prompt = _resolve_prompt_text(
+        prompt_map,
+        template_prompt_map,
+        "instructions_process",
+        "instructions-process",
     )
-    serving_prompt = _sanitize_prompt_text(prompt_map.get("serving", {}).get("prompt", ""))
-    wprm_prompt = _sanitize_prompt_text(
-        prompt_map.get("wprm_recipecard", {}).get("prompt", "")
-        or prompt_map.get("recipecard", {}).get("prompt", "")
-        or prompt_map.get("recipe_card", {}).get("prompt", "")
+    serving_prompt = _resolve_prompt_text(prompt_map, template_prompt_map, "serving")
+    ingredients_prompt = _resolve_prompt_text(
+        prompt_map,
+        template_prompt_map,
+        "ingredients",
     )
+    pin_prompt = _resolve_prompt_text(prompt_map, template_prompt_map, "pin")
+    wprm_prompt = _resolve_prompt_text(
+        prompt_map,
+        template_prompt_map,
+        "wprm_recipecard",
+        "recipecard",
+        "recipe_card",
+    )
+    initial_missing_prompt_types = [
+        prompt_type
+        for prompt_type, prompt in (
+            ("featured", _sanitize_prompt_text(prompt_map.get("featured", {}).get("prompt", ""))),
+            (
+                "instructions_process",
+                _sanitize_prompt_text(prompt_map.get("instructions_process", {}).get("prompt", "")),
+            ),
+            ("serving", _sanitize_prompt_text(prompt_map.get("serving", {}).get("prompt", ""))),
+        )
+        if not prompt
+    ]
+    if initial_missing_prompt_types:
+        logger.warning(
+            "Missing prompt types %s from primary builder for %s; using shared template defaults",
+            ", ".join(initial_missing_prompt_types),
+            url or focus_keyword,
+        )
     missing_prompt_types = [
         prompt_type
         for prompt_type, prompt in (
@@ -602,26 +666,7 @@ def _process_recipe(
     ]
     status = "ok"
     if missing_prompt_types:
-        logger.warning(
-            "Missing prompt types %s for %s; falling back to template prompts",
-            ", ".join(missing_prompt_types),
-            url,
-        )
-        prompts = generate_template_prompts(recipe, focus_keyword, settings, seed)
-        prompt_map = {item.get("type"): item for item in prompts if isinstance(item, dict)}
-        featured_prompt = prompt_map.get("featured", {}).get("prompt", "")
-        instructions_prompt = prompt_map.get("instructions_process", {}).get("prompt", "")
-        serving_prompt = prompt_map.get("serving", {}).get("prompt", "")
-        missing_prompt_types = [
-            prompt_type
-            for prompt_type, prompt in (
-                ("featured", featured_prompt),
-                ("instructions_process", instructions_prompt),
-                ("serving", serving_prompt),
-            )
-            if not prompt
-        ]
-        status = "missing_prompts" if missing_prompt_types else "ok"
+        status = "missing_prompts"
 
     if not wprm_prompt:
         wprm_prompt = featured_prompt
@@ -636,6 +681,8 @@ def _process_recipe(
             "featured": featured_prompt,
             "instructions_process": instructions_prompt,
             "serving": serving_prompt,
+            "ingredients": ingredients_prompt,
+            "pin": pin_prompt,
             "wprm_recipecard": wprm_prompt,
         },
         reference_image_url=validated_prompt_image_url,
@@ -644,6 +691,8 @@ def _process_recipe(
     featured_prompt = prompt_text_map.get("featured", "")
     instructions_prompt = prompt_text_map.get("instructions_process", "")
     serving_prompt = prompt_text_map.get("serving", "")
+    ingredients_prompt = prompt_text_map.get("ingredients", "")
+    pin_prompt = prompt_text_map.get("pin", "")
     wprm_prompt = prompt_text_map.get("wprm_recipecard", "")
     
     # Generate images only if enabled in settings
@@ -652,6 +701,8 @@ def _process_recipe(
             "featured": featured_prompt,
             "instructions_process": instructions_prompt,
             "serving": serving_prompt,
+            "ingredients": ingredients_prompt,
+            "pin": pin_prompt,
             "wprm_recipecard": wprm_prompt,
         }
         if settings.image_engine == "midjourney":
@@ -680,6 +731,9 @@ def _process_recipe(
             "featured": "",
             "instructions_process": "",
             "serving": "",
+            "ingredients": "",
+            "pin": "",
+            "wprm_recipecard": "",
         }
 
     row = {
@@ -694,12 +748,16 @@ def _process_recipe(
         "featured_image_prompt": featured_prompt,
         "instructions_process_image_prompt": instructions_prompt,
         "serving_image_prompt": serving_prompt,
+        "ingredients_image_prompt": ingredients_prompt,
+        "pin_image_prompt": pin_prompt,
         "WPRM_recipecard_image_prompt": wprm_prompt,
         "featured_image_generated_url": generated_urls.get("featured", ""),
         "instructions_process_image_generated_url": generated_urls.get(
             "instructions_process", ""
         ),
         "serving_image_generated_url": generated_urls.get("serving", ""),
+        "ingredients_image_generated_url": generated_urls.get("ingredients", ""),
+        "pin_image_generated_url": generated_urls.get("pin", ""),
         "WPRM_recipe)card_url": generated_urls.get("wprm_recipecard", "")
         or generated_urls.get("featured", ""),
     }

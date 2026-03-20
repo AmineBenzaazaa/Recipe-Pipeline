@@ -47,3 +47,17 @@ def test_sanitizer_preserves_supported_style_stylize_and_quality():
     assert "--style raw" in cleaned
     assert "--s 300" in cleaned
     assert "--q 1" in cleaned
+
+
+def test_sanitizer_adds_default_aspect_ratio_for_ingredients_and_pin():
+    ingredients_cleaned = sanitize_midjourney_prompt(
+        "Neatly arranged cookie ingredients on marble",
+        "ingredients",
+    )
+    pin_cleaned = sanitize_midjourney_prompt(
+        "Full Pinterest recipe pin with hero food and overlay zone",
+        "pin",
+    )
+
+    assert "--ar 2:3" in ingredients_cleaned
+    assert "--ar 2:3" in pin_cleaned
