@@ -10,19 +10,9 @@ GOOGLE_SHEETS_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
-STREAMLIT_SECRETS_FILE_CANDIDATES = (
-    Path.home() / ".streamlit" / "secrets.toml",
-    Path(__file__).resolve().parent.parent / ".streamlit" / "secrets.toml",
-)
-
-
-def _streamlit_secrets_file_exists() -> bool:
-    return any(path.is_file() for path in STREAMLIT_SECRETS_FILE_CANDIDATES)
 
 
 def _load_google_credentials_from_streamlit_secrets() -> Optional[Dict[str, Any]]:
-    if not _streamlit_secrets_file_exists():
-        return None
     try:
         import streamlit as st
     except ImportError:
