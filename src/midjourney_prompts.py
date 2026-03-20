@@ -1,16 +1,8 @@
 """
-Midjourney prompt generation using GPT (legacy approach).
+GPT-assisted prompt generation with a shared Pinterest-first template service.
 
-This module generates Midjourney prompts using GPT analysis of recipe content,
-following the proven approach from legacy.py.
-
-UPDATED: Pinterest-first *recipe-locked medium editorial* styling
-- Featured + Serving: medium editorial distance, but framing LOCKED on the recipe
-- Plate/bowl allowed only as minimal support (not readable, not descriptive)
-- No visible table surface, no scene, no environment storytelling
-- Instructions: keeps hands/process (still vertical 2:3)
-- All prompts: enforce no-text exclusions before --ar
-- Aspect ratios: featured = 3:2, instructions + serving = 2:3
+This module still performs GPT prompt analysis, while shared template composition
+and prompt finalization now live in the prompt service to reduce drift.
 """
 
 import json
@@ -18,10 +10,11 @@ import logging
 import re
 from typing import Dict, List, Optional, Tuple
 
-from .config import Settings
+from .config import DEFAULT_STYLE_ANCHOR, Settings
 from .midjourney_prompt_sanitizer import sanitize_midjourney_prompt
 from .models import Recipe
 from .openai_client import responses_create_text
+from .prompts.service import build_template_prompt_payload
 
 
 def generate_random_seed() -> int:
@@ -58,6 +51,7 @@ def generate_midjourney_prompts_gpt(
     recipe_text: str,
     settings: Settings,
     logger: logging.Logger,
+    seed: Optional[int] = None,
 ) -> List[Dict]:
     """
     Generate 3 Midjourney image prompts using GPT analysis (legacy approach).
@@ -69,14 +63,14 @@ def generate_midjourney_prompts_gpt(
         logger.info("OpenAI API key not set; using template prompts")
         return generate_template_prompts(recipe, focus_keyword, settings)
 
-    seed = generate_random_seed()
+    seed = seed if seed is not None else generate_random_seed()
     template_payload = generate_template_prompts(recipe, focus_keyword, settings, seed)
     template_json = json.dumps(template_payload, ensure_ascii=True, indent=2)
 
     if not focus_keyword:
         focus_keyword = recipe.name or "recipe"
 
-    style_anchor = "Exact same batch as the featured image. focus on the recipe."
+    style_anchor = settings.style_anchor or DEFAULT_STYLE_ANCHOR
 
     article_context = recipe_text[:3000] if recipe_text else ""
     if not article_context:
@@ -249,81 +243,16 @@ def generate_template_prompts(
     settings: Settings,
     seed: Optional[int] = None,
 ) -> List[Dict]:
-    """
-    Generate template prompts (fallback when GPT is unavailable).
-
-    FINAL: Recipe-locked medium editorial framing.
-    """
+    """Generate shared template prompts via the canonical prompt service."""
     if seed is None:
         seed = generate_random_seed()
 
     dish_name = recipe.name or focus_keyword or "the dish"
-    style_anchor = "Exact same batch as the featured image. focus on the recipe."
-    keyword_slug = focus_keyword.lower().replace(" ", "-") if focus_keyword else "recipe"
-
-    return [
-        {
-            "type": "featured",
-            "prompt": (
-                f"Ultra realistic food photography of {dish_name}, Pinterest viral recipe style, "
-                f"tight close-up hero shot, commercial bakery-style food photography. "
-                f"Soft natural kitchen lighting with warm highlights, glossy texture detail, "
-                f"realistic crumbs, sauce drips and layered textures, shallow depth of field, "
-                f"DSLR 85mm lens look, centered stacked presentation, rich contrast, cozy modern "
-                f"dessert blog aesthetic, clean composition with negative space for text overlay. "
-                f"Natural marble or soft neutral surface visible. {style_anchor} slight natural "
-                f"imperfections, human-made food styling, no CGI look no text no words no letters "
-                f"no typography no watermark no logo no branding no labels "
-                f"--ar 3:2 --seed {seed} --v 6 --style raw --s 300 --q 1"
-            ),
-            "placement": "Top of article (before introduction)",
-            "description": "Recipe-locked medium editorial hero shot of the finished dish",
-            "seo_metadata": {
-                "alt_text": f"{focus_keyword} finished dish recipe-locked hero image" if focus_keyword else f"{dish_name} finished dish hero image",
-                "filename": f"{keyword_slug}-featured.jpg",
-                "caption": f"{dish_name}, ready to enjoy",
-                "description": f"A recipe-locked medium editorial hero shot of {dish_name}, keeping full focus on the dish itself.",
-            },
-        },
-        {
-            "type": "instructions_process",
-            "prompt": (
-                f"Instructions-only process photo of {dish_name} preparation, hands actively working with ingredients. "
-                f"Same batch as featured image, vertical composition clearly showing the cooking step. "
-                f"{style_anchor} no text no words no letters no typography no watermark no logo no branding no labels "
-                f"--ar 2:3 --seed {seed} --v 7"
-            ),
-            "placement": "Middle of article (in instructions section)",
-            "description": "Hands preparing the dish during the cooking process",
-            "seo_metadata": {
-                "alt_text": f"Preparing {focus_keyword} step by step" if focus_keyword else f"Preparing {dish_name} step by step",
-                "filename": f"{keyword_slug}-instructions-process.jpg",
-                "caption": f"Preparing {dish_name}",
-                "description": f"Hands preparing the {dish_name} recipe during cooking.",
-            },
-        },
-        {
-            "type": "serving",
-            "prompt": (
-                f"Ultra realistic serving presentation of {dish_name}, Pinterest viral recipe style, "
-                f"tight plated hero shot with commercial food blog photography look. "
-                f"Soft natural kitchen lighting, warm cozy tones, glossy texture detail, realistic "
-                f"crumbs and sauce highlights, shallow depth of field, DSLR 85mm lens aesthetic, "
-                f"centered appetizing composition, rich contrast and layered textures, modern "
-                f"Pinterest recipe pin aesthetic. Plate secondary but visible, natural marble or "
-                f"neutral surface present. Same lighting family as featured image. {style_anchor} "
-                f"slight natural imperfections, human-made food styling, no CGI look no text no "
-                f"words no letters no typography no watermark no logo no branding no labels "
-                f"--ar 2:3 --seed {seed} --v 6 --style raw --s 300 --q 1"
-            ),
-            "placement": "Before serving section",
-            "description": "Recipe-locked serving image matching featured style",
-            "seo_metadata": {
-                "alt_text": f"{focus_keyword} serving recipe-locked view" if focus_keyword else f"{dish_name} serving view",
-                "filename": f"{keyword_slug}-serving.jpg",
-                "caption": f"Serve and enjoy {dish_name}",
-                "description": f"A recipe-locked serving image of {dish_name}, maintaining full visual focus on the food.",
-            },
-        },
-    ]
+    style_anchor = settings.style_anchor or DEFAULT_STYLE_ANCHOR
+    return build_template_prompt_payload(
+        dish_name=dish_name,
+        focus_keyword=focus_keyword,
+        style_anchor=style_anchor,
+        seed=seed,
+    )
     

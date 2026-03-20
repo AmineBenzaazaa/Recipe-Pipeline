@@ -3,6 +3,7 @@ import re
 from typing import List
 
 from .models import FAQItem, Recipe
+from .prompts.service import build_template_prompt_payload
 
 
 def seed_from_string(value: str) -> int:
@@ -19,97 +20,13 @@ def _slugify(text: str) -> str:
 def build_image_prompts(
     dish_name: str, focus_keyword: str, style_anchor: str, seed: int
 ) -> List[dict]:
-    """
-    Build professional image prompts for recipe articles.
-    
-    These prompts are designed for high-quality, professional food photography
-    suitable for blog articles and recipe websites. They explicitly exclude
-    text overlays and ensure professional composition.
-    """
-    dish = dish_name or "the dish"
-    slug = _slugify(focus_keyword)
-    
-    # Professional photography rules optimized for Midjourney
-    # Midjourney responds well to specific, descriptive terms and quality indicators
-    # CRITICAL: Multiple explicit text exclusions to prevent text overlays
-    professional_rules = (
-        "professional food photography, magazine quality, editorial style, "
-        "absolutely no text, no text overlay, no watermark, no labels, no writing, "
-        "no letters, no words, no typography, no branding, no logo, no text on food, "
-        "no text on plate, no text on background, completely text-free, "
-        "clean composition, pure food photography, "
-        "high resolution, sharp focus, professional lighting, restaurant quality, "
-        "food styling, appetizing, photogenic, commercial food photography, "
-        "8k, ultra detailed, professional shot, food photography award winning"
+    """Build shared template prompts via the canonical prompt service."""
+    return build_template_prompt_payload(
+        dish_name=dish_name,
+        focus_keyword=focus_keyword,
+        style_anchor=style_anchor,
+        seed=seed,
     )
-    
-    return [
-        {
-            "type": "featured",
-            "prompt": (
-                f"Professional food photography of {dish}, hero shot of the finished recipe, "
-                f"beautifully styled and plated, showcasing all key ingredients and textures, "
-                f"clean white or neutral background, professional composition, appetizing presentation, "
-                f"{professional_rules}, "
-                f"{style_anchor}, "
-                f"exact visual consistency for batch reference, "
-                f"no text no words no letters no typography no watermark no logo no branding no labels "
-                f"--ar 3:2 --seed {seed} --v 7"
-            ),
-            "placement": "Top of article (before introduction)",
-            "description": "Hero shot of the finished dish - professional food photography",
-            "seo_metadata": {
-                "alt_text": f"Professional food photography of {focus_keyword} - finished dish hero shot",
-                "filename": f"{slug}-featured.jpg",
-                "caption": f"Beautifully presented {dish} ready to enjoy",
-                "description": f"Professional hero shot of {dish} showcasing the finished recipe",
-            },
-        },
-        {
-            "type": "instructions_process",
-            "prompt": (
-                f"Professional food photography of {dish} preparation process, "
-                f"hands working with fresh ingredients, mixing kneading or cooking techniques, "
-                f"action shot showing the cooking process, ingredients visible, professional styling, "
-                f"clean background, natural lighting, vertical composition, "
-                f"{professional_rules}, "
-                f"{style_anchor}, "
-                f"same visual style and batch as featured image for consistency, "
-                f"no text no words no letters no typography no watermark no logo no branding no labels "
-                f"--ar 2:3 --seed {seed} --v 7"
-            ),
-            "placement": "Middle of article (in instructions section)",
-            "description": "Professional process photography showing cooking techniques",
-            "seo_metadata": {
-                "alt_text": f"Professional food photography of preparing {focus_keyword} - cooking process",
-                "filename": f"instructions-process-{slug}.jpg",
-                "caption": f"Step-by-step preparation of {dish}",
-                "description": f"Professional process photography showing hands preparing {dish}",
-            },
-        },
-        {
-            "type": "serving",
-            "prompt": (
-                f"Professional food photography of {dish}, elegantly plated and ready to serve, "
-                f"beautiful presentation on high-quality dinnerware, garnished and styled professionally, "
-                f"appetizing composition, restaurant-quality presentation, inviting and photogenic, "
-                f"clean background, professional food styling, natural lighting, "
-                f"{professional_rules}, "
-                f"{style_anchor}, "
-                f"same visual style and batch as featured image for consistency, "
-                f"no text no words no letters no typography no watermark no logo no branding no labels "
-                f"--ar 2:3 --seed {seed} --v 7"
-            ),
-            "placement": "Before serving section",
-            "description": "Professional serving presentation photography",
-            "seo_metadata": {
-                "alt_text": f"Professional food photography of {focus_keyword} - serving presentation",
-                "filename": f"serving-{slug}.jpg",
-                "caption": f"Elegantly plated {dish} ready to serve",
-                "description": f"Professional serving presentation of {dish} on beautiful dinnerware",
-            },
-        },
-    ]
 
 
 def _strip_quantity(text: str) -> str:
