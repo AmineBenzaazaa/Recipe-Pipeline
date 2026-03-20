@@ -45,6 +45,9 @@ DEFAULT_OUTPUT_PATH = APP_DIR / "batch_output.csv"
 DEFAULT_KEYWORD_INPUT_PATH = APP_DIR / "keywords_batch_input.csv"
 DEFAULT_KEYWORD_OUTPUT_PATH = APP_DIR / "keywords_batch_output.csv"
 DEFAULT_SITE_LANGUAGE_MAP_PATH = SECRETS_DIR / "site_language_map.json"
+DEFAULT_GOOGLE_SHEET_URL = (
+    "https://docs.google.com/spreadsheets/d/1Wl7vEgiJj4AApHOVxwgY1xEiAhnbXys-w8eA_qK5vbk/edit?pli=1&gid=0#gid=0"
+)
 LOG_TAIL_LIMIT = 400
 PAUSE_FILE = APP_DIR / ".pipeline_pause"
 
@@ -1093,7 +1096,7 @@ def render_pins_page() -> None:
     if "sheet_tabs_source" not in st.session_state:
         st.session_state["sheet_tabs_source"] = None
     if "sheet_url" not in st.session_state:
-        st.session_state["sheet_url"] = ""
+        st.session_state["sheet_url"] = DEFAULT_GOOGLE_SHEET_URL
     if "sheet_ready_value" not in st.session_state:
         st.session_state["sheet_ready_value"] = ""
     if "sheet_settings_saved" not in st.session_state:
@@ -1143,7 +1146,9 @@ def render_pins_page() -> None:
                 or "gpt-5-mini"
             )
         if not st.session_state.get("sheet_url"):
-            st.session_state["sheet_url"] = env_defaults.get("GOOGLE_SHEET_URL", "") or ""
+            st.session_state["sheet_url"] = (
+                env_defaults.get("GOOGLE_SHEET_URL", "") or DEFAULT_GOOGLE_SHEET_URL
+            )
         if not st.session_state.get("sheet_tab"):
             st.session_state["sheet_tab"] = env_defaults.get("GOOGLE_SHEET_TAB", "") or ""
         if not st.session_state.get("sheet_credentials_path"):
@@ -1269,10 +1274,7 @@ def render_pins_page() -> None:
                 handle.write(credentials_upload.read())
             st.session_state["sheet_credentials_path"] = str(DEFAULT_SHEET_CREDENTIALS_PATH)
             st.info(f"Saved credentials to {DEFAULT_SHEET_CREDENTIALS_PATH}")
-        sheet_credentials_path = st.text_input(
-            "Credentials path (local fallback)",
-            key="sheet_credentials_path",
-        )
+        sheet_credentials_path = st.session_state.get("sheet_credentials_path", "")
         maybe_load_sheet_tabs(sheet_url, sheet_credentials_path)
         load_tabs_disabled = not (sheet_url and google_credentials_configured(sheet_credentials_path))
         if st.button("Reload sheet tabs", disabled=load_tabs_disabled):
@@ -1712,7 +1714,7 @@ def render_keywords_page() -> None:
     if "sheet_tabs_source" not in st.session_state:
         st.session_state["sheet_tabs_source"] = None
     if "sheet_url" not in st.session_state:
-        st.session_state["sheet_url"] = ""
+        st.session_state["sheet_url"] = DEFAULT_GOOGLE_SHEET_URL
     if "sheet_ready_value" not in st.session_state:
         st.session_state["sheet_ready_value"] = ""
     if "sheet_settings_saved" not in st.session_state:
@@ -1736,7 +1738,9 @@ def render_keywords_page() -> None:
                 or "gpt-5-mini"
             )
         if not st.session_state.get("sheet_url"):
-            st.session_state["sheet_url"] = env_defaults.get("GOOGLE_SHEET_URL", "") or ""
+            st.session_state["sheet_url"] = (
+                env_defaults.get("GOOGLE_SHEET_URL", "") or DEFAULT_GOOGLE_SHEET_URL
+            )
         if not st.session_state.get("sheet_tab"):
             st.session_state["sheet_tab"] = env_defaults.get("GOOGLE_SHEET_TAB", "") or ""
         if not st.session_state.get("sheet_credentials_path"):
@@ -1873,10 +1877,7 @@ def render_keywords_page() -> None:
                 handle.write(credentials_upload.read())
             st.session_state["sheet_credentials_path"] = str(DEFAULT_SHEET_CREDENTIALS_PATH)
             st.info(f"Saved credentials to {DEFAULT_SHEET_CREDENTIALS_PATH}")
-        sheet_credentials_path = st.text_input(
-            "Credentials path (local fallback)",
-            key="sheet_credentials_path",
-        )
+        sheet_credentials_path = st.session_state.get("sheet_credentials_path", "")
         maybe_load_sheet_tabs(sheet_url, sheet_credentials_path)
         load_tabs_disabled = not (sheet_url and google_credentials_configured(sheet_credentials_path))
         if st.button("Reload sheet tabs", disabled=load_tabs_disabled, key="kw_reload_sheet_tabs"):
