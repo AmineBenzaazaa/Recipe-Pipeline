@@ -29,6 +29,11 @@ def test_resolve_output_language_gotujka_defaults_to_polish():
     assert resolve_output_language(sheet_tab="Gotujka.pl") == "pl"
 
 
+def test_resolve_output_language_additional_defaults_are_available():
+    assert resolve_output_language(sheet_tab="sazonperfecto.com") == "es"
+    assert resolve_output_language(sheet_tab="wuerzmoment.com") == "de"
+
+
 def test_resolve_output_language_explicit_override_wins():
     assert (
         resolve_output_language(

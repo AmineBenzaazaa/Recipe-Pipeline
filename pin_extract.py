@@ -706,21 +706,21 @@ def call_openai_chat(api_key, model, messages, timeout, temperature, max_tokens)
         "model": model,
         "messages": messages,
         "temperature": temperature,
-        "max_tokens": max_tokens,
+        "max_completion_tokens": max_tokens,
     }
-    body = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions",
-        data=body,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        },
-        method="POST",
-    )
     retries = 1
     for attempt in range(retries + 1):
         try:
+            body = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                "https://api.openai.com/v1/chat/completions",
+                data=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}",
+                },
+                method="POST",
+            )
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 text = resp.read().decode("utf-8", errors="replace")
                 return json.loads(text)
@@ -729,6 +729,19 @@ def call_openai_chat(api_key, model, messages, timeout, temperature, max_tokens)
                 detail = exc.read().decode("utf-8", errors="replace")
             except Exception:
                 detail = ""
+            if (
+                exc.code == 400
+                and "max_completion_tokens" in payload
+                and "max_completion_tokens" in detail
+                and "max_tokens" in detail
+            ):
+                payload["max_tokens"] = payload.pop("max_completion_tokens")
+                if attempt < retries:
+                    print(
+                        "OpenAI model rejected max_completion_tokens; retrying with max_tokens...",
+                        file=sys.stderr,
+                    )
+                    continue
             print(f"OpenAI request failed: HTTP {exc.code} {detail}", file=sys.stderr)
             return None
         except urllib.error.URLError as exc:
@@ -911,6 +924,8 @@ def fetch_url(url, timeout, accept_language=""):
             body = resp.read()
             text = body.decode(charset, errors="replace")
             return resp.getcode(), text
+    except TimeoutError as exc:
+        raise urllib.error.URLError(f"Timed out fetching {url}") from exc
     except (UnicodeEncodeError, UnicodeError) as exc:
         raise urllib.error.URLError(f"Invalid URL: {url}") from exc
 

@@ -19,6 +19,7 @@ import streamlit as st
 from dotenv import dotenv_values, set_key
 
 from src.output_language import (
+    DEFAULT_SITE_LANGUAGE_MAP,
     load_site_language_map_from_file,
     parse_site_language_map,
     resolve_output_language,
@@ -1004,7 +1005,11 @@ def render_domain_language_summary(sheet_tab: str) -> None:
     st.caption(
         f"Local JSON map: `{_resolve_site_language_map_path(os.getenv('SITE_LANGUAGE_MAP_FILE', ''))}`"
     )
-    mapping = parse_site_language_map(st.session_state.get("site_language_map_raw", ""))
+    mapping = {
+        **DEFAULT_SITE_LANGUAGE_MAP,
+        **load_site_language_map_from_file(os.getenv("SITE_LANGUAGE_MAP_FILE", "")),
+        **parse_site_language_map(st.session_state.get("site_language_map_raw", "")),
+    }
     if mapping:
         markdown_rows = ["| Domain | Language |", "| --- | --- |"]
         for domain, language in sorted(mapping.items()):
