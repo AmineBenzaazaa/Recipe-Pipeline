@@ -12,6 +12,8 @@ from .config import Settings
 DEFAULT_OUTPUT_LANGUAGE = "en"
 DEFAULT_SITE_LANGUAGE_MAP = {
     "gotujka.pl": "pl",
+    "sazonperfecto.com": "es",
+    "wuerzmoment.com": "de",
 }
 DEFAULT_SITE_LANGUAGE_MAP_FILE = (
     Path(__file__).resolve().parent.parent / ".secrets" / "site_language_map.json"
