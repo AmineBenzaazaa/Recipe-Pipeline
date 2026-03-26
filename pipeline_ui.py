@@ -392,7 +392,9 @@ def run_generator(
         cmd.extend(["--sheet-credentials", sheet_credentials])
     if sheet_ready_value:
         cmd.extend(["--sheet-ready-value", sheet_ready_value])
-    return subprocess.run(cmd, capture_output=True, text=True)
+    env = os.environ.copy()
+    env.setdefault("IMAGE_ENGINE", "openai")
+    return subprocess.run(cmd, capture_output=True, text=True, env=env)
 
 
 def run_generator_stream(
@@ -432,6 +434,7 @@ def run_generator_stream(
 
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
+    env.setdefault("IMAGE_ENGINE", "openai")
     process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,

@@ -67,3 +67,22 @@ def test_apply_image_aliases_adds_ingredients_and_pin_aliases():
 
     assert row["ingredients_image_url"] == "https://cdn.example/ingredients.png"
     assert row["pin_image_url"] == "https://cdn.example/pin.png"
+
+
+def test_build_sheet_sync_row_includes_source_identifiers_for_upsert():
+    row = {"focus_keyword": "banana pudding truffles", "featured_image_prompt": "hero prompt"}
+
+    synced = batch._build_sheet_sync_row(
+        row,
+        focus_keyword="banana pudding truffles",
+        recipe_url="https://example.com/banana-truffles",
+        pinterest_url="https://pinterest.com/pin/123",
+    )
+
+    assert synced["Recipe Name"] == "banana pudding truffles"
+    assert synced["recipe_name"] == "banana pudding truffles"
+    assert synced["Recipe URL"] == "https://example.com/banana-truffles"
+    assert synced["recipe_url"] == "https://example.com/banana-truffles"
+    assert synced["url"] == "https://example.com/banana-truffles"
+    assert synced["Pinterest URL"] == "https://pinterest.com/pin/123"
+    assert synced["pinterest_url"] == "https://pinterest.com/pin/123"

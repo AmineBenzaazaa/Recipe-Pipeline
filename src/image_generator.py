@@ -28,9 +28,10 @@ def _extract_seed(prompt: str) -> str:
 
 
 def _choose_size(prompt: str) -> str:
-    if "--ar 3:2" in prompt:
+    prompt_lower = (prompt or "").lower()
+    if "--ar 3:2" in prompt_lower or "3:2 aspect ratio" in prompt_lower:
         return "1536x1024"
-    if "--ar 2:3" in prompt:
+    if "--ar 2:3" in prompt_lower or "2:3 aspect ratio" in prompt_lower:
         return "1024x1536"
     return "1024x1024"
 

@@ -14,7 +14,7 @@ from .config import DEFAULT_STYLE_ANCHOR, Settings
 from .midjourney_prompt_sanitizer import sanitize_midjourney_prompt
 from .models import Recipe
 from .openai_client import responses_create_text
-from .prompts.service import build_prompt_payload
+from .prompts.service import build_prompt_payload, render_prompt_text_for_engine
 from .prompts.types import CORE_PROMPT_TYPE_ORDER
 
 
@@ -66,12 +66,42 @@ def generate_midjourney_prompts_gpt(
 
     seed = seed if seed is not None else generate_random_seed()
     template_payload = generate_template_prompts(recipe, focus_keyword, settings, seed)
-    template_json = json.dumps(template_payload, ensure_ascii=True, indent=2)
+    template_json = json.dumps(
+        _reference_payload_for_engine(template_payload, settings.image_engine),
+        ensure_ascii=True,
+        indent=2,
+    )
 
     if not focus_keyword:
         focus_keyword = recipe.name or "recipe"
 
     style_anchor = settings.style_anchor or DEFAULT_STYLE_ANCHOR
+    uses_chatgpt_prompt_format = (settings.image_engine or "").strip().lower() == "openai"
+    image_targets = (
+        "1. Featured Image (Pinterest viral close-up hero). End with: Horizontal composition, 3:2 aspect ratio.\n"
+        "2. Instructions-only process photo (Hands preparing the dish). End with: Vertical composition, 2:3 aspect ratio.\n"
+        "3. Serving Image (Pinterest viral plated serving hero). End with: Vertical composition, 2:3 aspect ratio."
+        if uses_chatgpt_prompt_format
+        else
+        "1. Featured Image (Pinterest viral close-up hero) --ar 3:2\n"
+        "2. Instructions-only process photo (Hands preparing the dish) --ar 2:3\n"
+        "3. Serving Image (Pinterest viral plated serving hero) --ar 2:3"
+    )
+    continuity_rules = (
+        "Maintain exact continuity using the same style anchor across all prompts.\n"
+        "Do not use MidJourney parameter syntax like --ar, --seed, or --v.\n"
+        "Do not prefix raw image URLs into the prompt text.\n"
+        "Write clean natural-language ChatGPT image prompts."
+        if uses_chatgpt_prompt_format
+        else
+        "Maintain exact continuity using the same style anchor and seed.\n"
+        "Use this seed for ALL prompts: {seed}\n"
+        "Include this style anchor in ALL prompts: \"{style_anchor}\""
+    )
+    if uses_chatgpt_prompt_format:
+        continuity_rules = continuity_rules + f'\nInclude this style anchor in ALL prompts: "{style_anchor}"'
+    else:
+        continuity_rules = continuity_rules.format(seed=seed, style_anchor=style_anchor)
 
     article_context = recipe_text[:3000] if recipe_text else ""
     if not article_context:
@@ -93,9 +123,7 @@ Article Content:
 {article_context}
 
 Generate prompts for these 3 images in order:
-1. Featured Image (Pinterest viral close-up hero) --ar 3:2
-2. Instructions-only process photo (Hands preparing the dish) --ar 2:3
-3. Serving Image (Pinterest viral plated serving hero) --ar 2:3
+{image_targets}
 
 STRICT RULES FOR IMAGE GENERATION:
 - Featured image MUST match Pinterest viral dessert/recipe hero styling:
@@ -113,12 +141,12 @@ STRICT RULES FOR IMAGE GENERATION:
 - Include slight natural imperfections and human-made food styling
 - Avoid CGI / synthetic look
 - Avoid any pork, bacon, ham, lard, gelatin, or alcohol references.
-- Maintain exact continuity using the same style anchor and seed.
+- {continuity_rules}
 - NO text, NO watermark, NO labels, NO writing on the image.
 - Professional magazine-quality food photography.
 
 For each image, provide:
-- A detailed image prompt with style anchor and seed
+- A detailed image prompt with the style anchor
 - Exact placement location in the article
 - Brief description of what the image shows
 - Complete SEO metadata (alt text, filename, caption, description)
@@ -128,9 +156,6 @@ SEO Requirements:
 - Filename: Hyphenated, lowercase, include keyword
 - Caption: Short, descriptive, human-readable
 - Description: Full sentence describing dish with continuity reference
-
-Use this seed for ALL prompts: {seed}
-Include this style anchor in ALL prompts: "{style_anchor}"
 
 Return the response in this exact JSON format:
 {template_json}
@@ -170,7 +195,11 @@ Output ONLY JSON.
                 raise ValueError("No JSON found in response")
 
             data = json.loads(json_text)
-            images, note = _normalize_gpt_images_payload(data, template_payload)
+            images, note = _normalize_gpt_images_payload(
+                data,
+                template_payload,
+                image_engine=settings.image_engine,
+            )
             if note:
                 logger.warning(f"GPT prompt response normalized with fallback: {note}")
             return images
@@ -193,6 +222,7 @@ def _extract_json_from_text(text: str) -> str:
 def _normalize_gpt_images_payload(
     data: object,
     template_payload: List[Dict],
+    image_engine: str = "midjourney",
 ) -> Tuple[List[Dict], str]:
     if not isinstance(template_payload, list) or len(template_payload) != 3:
         return template_payload, "Invalid template payload"
@@ -219,10 +249,18 @@ def _normalize_gpt_images_payload(
         base = dict(template_by_type.get(image_type, template_payload[idx]))
         prompt = item.get("prompt")
         if isinstance(prompt, str) and prompt.strip():
-            base["prompt"] = sanitize_midjourney_prompt(
-                _inject_no_text_exclusions(prompt.strip()),
-                image_type,
-            )
+            raw_prompt = prompt.strip()
+            if (image_engine or "").strip().lower() == "openai":
+                base["prompt"] = render_prompt_text_for_engine(
+                    raw_prompt,
+                    image_type,
+                    image_engine=image_engine,
+                )
+            else:
+                base["prompt"] = sanitize_midjourney_prompt(
+                    _inject_no_text_exclusions(raw_prompt),
+                    image_type,
+                )
         if isinstance(item.get("placement"), str):
             base["placement"] = item["placement"]
         if isinstance(item.get("description"), str):
@@ -262,4 +300,23 @@ def generate_template_prompts(
         include_ingredients=include_ingredients,
         include_pin=include_pin,
     )
+
+
+def _reference_payload_for_engine(
+    template_payload: List[Dict],
+    image_engine: str,
+) -> List[Dict]:
+    reference_payload: List[Dict] = []
+    for item in template_payload:
+        cloned = dict(item)
+        prompt_type = cloned.get("type", "featured")
+        prompt_text = cloned.get("prompt")
+        if isinstance(prompt_text, str) and prompt_text.strip():
+            cloned["prompt"] = render_prompt_text_for_engine(
+                prompt_text,
+                prompt_type,
+                image_engine=image_engine,
+            )
+        reference_payload.append(cloned)
+    return reference_payload
     

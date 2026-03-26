@@ -71,6 +71,53 @@ def test_finalize_prompt_bundle_returns_typed_specs():
     assert all("--v 7" in item.finalized_prompt_text for item in specs)
 
 
+def test_finalize_prompt_map_for_openai_removes_reference_urls_and_mj_suffixes():
+    finalized = finalize_prompt_map(
+        {
+            "featured": "Chocolate cake hero image, no CGI, no synthetic texture --ar 3:2 --seed 12 --v 7",
+            "serving": "Slice of cake on plate --ar 2:3 --seed 12 --v 7",
+        },
+        reference_image_url="https://example.com/reference.jpg",
+        sanitize=True,
+        image_engine="openai",
+    )
+
+    assert not finalized["featured"].startswith("https://example.com/reference.jpg ")
+    assert "--ar" not in finalized["featured"]
+    assert "--seed" not in finalized["featured"]
+    assert "--v" not in finalized["featured"]
+    assert finalized["featured"].endswith("Horizontal composition, 3:2 aspect ratio.")
+
+    assert not finalized["serving"].startswith("https://example.com/reference.jpg ")
+    assert "--ar" not in finalized["serving"]
+    assert "--seed" not in finalized["serving"]
+    assert "--v" not in finalized["serving"]
+    assert finalized["serving"].endswith("Vertical composition, 2:3 aspect ratio.")
+
+
+def test_finalize_prompt_bundle_for_openai_returns_clean_natural_language_prompts():
+    bundle = build_template_prompt_bundle(
+        dish_name="Lemon Cookies",
+        focus_keyword="lemon cookies",
+        style_anchor="Anchor",
+        seed=22,
+    )
+
+    specs = finalize_prompt_bundle(bundle, sanitize=True, image_engine="openai")
+
+    assert [item.prompt_type for item in specs] == [
+        "featured",
+        "instructions_process",
+        "serving",
+    ]
+    assert all("--v 7" not in item.finalized_prompt_text for item in specs)
+    assert all("--ar" not in item.finalized_prompt_text for item in specs)
+    assert all("--seed" not in item.finalized_prompt_text for item in specs)
+    assert specs[0].finalized_prompt_text.endswith("Horizontal composition, 3:2 aspect ratio.")
+    assert specs[1].finalized_prompt_text.endswith("Vertical composition, 2:3 aspect ratio.")
+    assert specs[2].finalized_prompt_text.endswith("Vertical composition, 2:3 aspect ratio.")
+
+
 def test_legacy_template_wrappers_share_the_same_template_source():
     formatters_payload = build_image_prompts(
         "Blueberry Muffins",

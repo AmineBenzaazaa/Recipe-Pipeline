@@ -101,7 +101,7 @@ class Settings(BaseModel):
         description="Image quality setting (high, standard, hd)"
     )
     image_engine: str = Field(
-        default="midjourney",
+        default="openai",
         description="Image generation engine (midjourney, openai, imagineapi)"
     )
     temperature: float = Field(
@@ -373,7 +373,7 @@ def load_settings() -> Settings:
         vision_model=os.getenv("VISION_MODEL", "gpt-4.1"),
         image_model=os.getenv("IMAGE_MODEL", "gpt-image-1.5"),
         image_quality=os.getenv("IMAGE_QUALITY", "high"),
-        image_engine=os.getenv("IMAGE_ENGINE", "midjourney"),
+        image_engine=os.getenv("IMAGE_ENGINE", "openai"),
         temperature=float(os.getenv("TEMPERATURE", "0.6")),
         target_words=int(os.getenv("TARGET_WORDS", "1800")),
             use_multi_call=use_multi_call,

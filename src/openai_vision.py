@@ -7,7 +7,7 @@ from typing import List
 
 from .config import Settings
 from .openai_client import responses_create_text
-from .prompts.service import build_template_prompt_payload
+from .prompts.service import build_template_prompt_payload, render_prompt_text_for_engine
 
 
 def _encode_image(path: str) -> str:
@@ -23,9 +23,16 @@ def _extract_json_from_text(text: str) -> str:
     return match.group(1) if match else ""
 
 
-def _validate_prompt_payload(payload: List[dict], focus_keyword: str, style_anchor: str, seed: int) -> bool:
+def _validate_prompt_payload(
+    payload: List[dict],
+    focus_keyword: str,
+    style_anchor: str,
+    seed: int,
+    image_engine: str,
+) -> bool:
     if not isinstance(payload, list) or len(payload) != 3:
         return False
+    is_openai_image_engine = (image_engine or "").strip().lower() == "openai"
     for item in payload:
         if not isinstance(item, dict):
             return False
@@ -41,17 +48,27 @@ def _validate_prompt_payload(payload: List[dict], focus_keyword: str, style_anch
         prompt_text = item.get("prompt", "")
         if style_anchor not in prompt_text:
             return False
-        if f"--seed {seed}" not in prompt_text:
+        if not is_openai_image_engine and f"--seed {seed}" not in prompt_text:
             return False
     return True
 
 
-def _ensure_midjourney_version(payload: List[dict]) -> List[dict]:
+def _normalize_prompt_payload_for_engine(
+    payload: List[dict],
+    image_engine: str,
+) -> List[dict]:
     for item in payload:
+        prompt_type = item.get("type", "featured")
         prompt = item.get("prompt")
         if not isinstance(prompt, str) or not prompt.strip():
             continue
-        if re.search(r"\s--v\s+[\d.]+", prompt):
+        if (image_engine or "").strip().lower() == "openai":
+            item["prompt"] = render_prompt_text_for_engine(
+                prompt,
+                prompt_type,
+                image_engine=image_engine,
+            )
+        elif re.search(r"\s--v\s+[\d.]+", prompt):
             item["prompt"] = re.sub(r"\s--v\s+[\d.]+", " --v 7", prompt.strip(), count=1)
         else:
             item["prompt"] = f"{prompt.strip()} --v 7"
@@ -142,7 +159,11 @@ def generate_prompts_from_images(
         style_anchor=style_anchor,
         seed=seed,
     )
-    template_json = json.dumps(template_payload, ensure_ascii=True, indent=2)
+    reference_payload = _normalize_prompt_payload_for_engine(
+        [dict(item) for item in template_payload],
+        settings.image_engine,
+    )
+    template_json = json.dumps(reference_payload, ensure_ascii=True, indent=2)
 
     payload = {
         "model": settings.vision_model,
@@ -177,8 +198,14 @@ def generate_prompts_from_images(
         logger.warning("Vision response JSON invalid; using template prompts")
         return template_payload
 
-    if not _validate_prompt_payload(payload, focus_keyword, style_anchor, seed):
+    if not _validate_prompt_payload(
+        payload,
+        focus_keyword,
+        style_anchor,
+        seed,
+        settings.image_engine,
+    ):
         logger.warning("Vision prompts failed validation; using template prompts")
         return template_payload
 
-    return _ensure_midjourney_version(payload)
+    return _normalize_prompt_payload_for_engine(payload, settings.image_engine)

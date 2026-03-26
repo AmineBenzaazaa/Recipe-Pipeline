@@ -318,7 +318,12 @@ def _generate_u2_cloudinary_url(
     settings,
     logger: logging.Logger,
 ) -> str:
-    prompt = finalize_prompt_text(prompt, image_type, sanitize=True)
+    prompt = finalize_prompt_text(
+        prompt,
+        image_type,
+        sanitize=True,
+        image_engine="imagineapi",
+    )
     image_id = _create_imagineapi_job(base_url, token, prompt, request_timeout)
     logger.info("Created image job %s (%s)", image_id, image_type)
 
