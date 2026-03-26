@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -166,7 +167,17 @@ class GoogleSheetWriter:
     def _load_headers(self, expected_headers: Optional[List[str]]) -> List[str]:
         headers = self._worksheet.row_values(1)
         if headers:
-            return headers
+            if not expected_headers:
+                return headers
+
+            merged_headers, added_headers = _merge_sheet_headers(headers, expected_headers)
+            if added_headers:
+                self._worksheet.update("1:1", [merged_headers])
+                self._logger.warning(
+                    "Added missing Google Sheet headers: %s",
+                    ", ".join(added_headers),
+                )
+            return merged_headers
         if not expected_headers:
             raise ValueError("Sheet is missing headers and no expected headers were provided")
         self._worksheet.update("1:1", [expected_headers])
@@ -175,16 +186,211 @@ class GoogleSheetWriter:
     def append_row(self, row: dict) -> None:
         if not self._headers:
             raise ValueError("Sheet headers are not configured")
-        values: List[str] = []
-        for header in self._headers:
-            if header in row and row[header] is not None:
-                values.append(str(row[header]))
+        values = _build_row_values(self._headers, row, self._ready_value)
+        self._worksheet.append_row(
+            values,
+            value_input_option="USER_ENTERED",
+            table_range="A1",
+        )
+
+    def upsert_row(self, row: dict) -> str:
+        if not self._headers:
+            raise ValueError("Sheet headers are not configured")
+
+        normalized_row = _normalize_row_keys(row)
+        matched_row_index = self._find_matching_row_index(normalized_row)
+        if matched_row_index is None:
+            self.append_row(row)
+            return "appended"
+
+        payload = _build_row_update_payload(
+            headers=self._headers,
+            normalized_row=normalized_row,
+            row_index=matched_row_index,
+            ready_value=self._ready_value,
+        )
+        if not payload:
+            return "skipped"
+
+        self._worksheet.batch_update(payload, value_input_option="USER_ENTERED")
+        return "updated"
+
+    def _find_matching_row_index(self, normalized_row: Dict[str, Any]) -> Optional[int]:
+        source_match = _extract_match_values_from_row(normalized_row)
+        if not any(source_match.values()):
+            return None
+
+        values = self._worksheet.get_all_values()
+        if len(values) <= 1:
+            return None
+
+        header_indices = _header_index_map(self._headers)
+        keyword_matches: List[int] = []
+        for row_index, row_values in enumerate(values[1:], start=2):
+            candidate_match = _extract_match_values_from_sheet_row(row_values, header_indices)
+            if source_match["recipe_url"] and candidate_match["recipe_url"]:
+                if source_match["recipe_url"] == candidate_match["recipe_url"]:
+                    return row_index
                 continue
-            if header.strip().lower() == "ready":
-                values.append(self._ready_value)
-            else:
-                values.append("")
-        self._worksheet.append_row(values, value_input_option="USER_ENTERED")
+            if source_match["pinterest_url"] and candidate_match["pinterest_url"]:
+                if source_match["pinterest_url"] == candidate_match["pinterest_url"]:
+                    return row_index
+                continue
+            if source_match["keyword"] and candidate_match["keyword"]:
+                if source_match["keyword"] == candidate_match["keyword"]:
+                    keyword_matches.append(row_index)
+
+        if len(keyword_matches) == 1:
+            return keyword_matches[0]
+
+        if len(keyword_matches) > 1:
+            self._logger.warning(
+                "Multiple matching sheet rows found for keyword '%s'; appending instead of updating in place.",
+                source_match["keyword"],
+            )
+        return None
+
+
+def _normalize_header_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", (value or "").strip().lower()).strip("_")
+
+
+def _merge_sheet_headers(
+    existing_headers: List[str],
+    expected_headers: List[str],
+) -> tuple[List[str], List[str]]:
+    merged_headers = list(existing_headers)
+    existing_normalized = {
+        _normalize_header_key(header)
+        for header in existing_headers
+        if _normalize_header_key(header)
+    }
+    added_headers: List[str] = []
+
+    for header in expected_headers:
+        normalized = _normalize_header_key(header)
+        if not normalized or normalized in existing_normalized:
+            continue
+        merged_headers.append(header)
+        existing_normalized.add(normalized)
+        added_headers.append(header)
+
+    return merged_headers, added_headers
+
+
+def _normalize_row_keys(row: dict) -> Dict[str, Any]:
+    normalized: Dict[str, Any] = {}
+    for key, value in (row or {}).items():
+        normalized_key = _normalize_header_key(str(key))
+        if normalized_key and normalized_key not in normalized:
+            normalized[normalized_key] = value
+    return normalized
+
+
+def _build_row_values(headers: List[str], row: dict, ready_value: str) -> List[str]:
+    normalized_row = _normalize_row_keys(row)
+    values: List[str] = []
+    for header in headers:
+        if header in row and row[header] is not None:
+            values.append(str(row[header]))
+            continue
+
+        normalized_header = _normalize_header_key(header)
+        if normalized_header in normalized_row and normalized_row[normalized_header] is not None:
+            values.append(str(normalized_row[normalized_header]))
+            continue
+
+        if header.strip().lower() == "ready":
+            values.append(ready_value)
+        else:
+            values.append("")
+    return values
+
+
+def _normalize_match_value(value: Any) -> str:
+    cleaned = str(value or "").strip()
+    if not cleaned:
+        return ""
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    if "://" in cleaned:
+        cleaned = cleaned.rstrip("/")
+    return cleaned.casefold()
+
+
+def _first_non_empty(mapping: Dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = _normalize_match_value(mapping.get(key, ""))
+        if value:
+            return value
+    return ""
+
+
+def _header_index_map(headers: List[str]) -> Dict[str, int]:
+    header_indices: Dict[str, int] = {}
+    for index, header in enumerate(headers):
+        normalized = _normalize_header_key(header)
+        if normalized and normalized not in header_indices:
+            header_indices[normalized] = index
+    return header_indices
+
+
+def _read_row_value(row_values: List[str], index: Optional[int]) -> str:
+    if index is None or index < 0 or index >= len(row_values):
+        return ""
+    return row_values[index]
+
+
+def _extract_match_values_from_row(normalized_row: Dict[str, Any]) -> Dict[str, str]:
+    return {
+        "keyword": _first_non_empty(normalized_row, "focus_keyword", "recipe_name", "topic"),
+        "recipe_url": _first_non_empty(normalized_row, "recipe_url", "url"),
+        "pinterest_url": _first_non_empty(normalized_row, "pinterest_url"),
+    }
+
+
+def _extract_match_values_from_sheet_row(
+    row_values: List[str],
+    header_indices: Dict[str, int],
+) -> Dict[str, str]:
+    row_mapping = {
+        key: _read_row_value(row_values, index)
+        for key, index in header_indices.items()
+    }
+    return _extract_match_values_from_row(row_mapping)
+
+
+def _column_to_a1(col_index_zero_based: int) -> str:
+    value = col_index_zero_based + 1
+    chars: List[str] = []
+    while value > 0:
+        value, rem = divmod(value - 1, 26)
+        chars.append(chr(65 + rem))
+    return "".join(reversed(chars))
+
+
+def _build_row_update_payload(
+    *,
+    headers: List[str],
+    normalized_row: Dict[str, Any],
+    row_index: int,
+    ready_value: str,
+) -> List[dict]:
+    payload: List[dict] = []
+    for col_index, header in enumerate(headers):
+        normalized_header = _normalize_header_key(header)
+        if normalized_header in normalized_row:
+            value = normalized_row[normalized_header]
+        elif normalized_header == "ready":
+            value = ready_value
+        else:
+            continue
+        payload.append(
+            {
+                "range": f"{_column_to_a1(col_index)}{row_index}",
+                "values": [[str(value or "")]],
+            }
+        )
+    return payload
 
 
 def list_sheet_worksheets(sheet_url: str, credentials_path: str = "") -> List[str]:

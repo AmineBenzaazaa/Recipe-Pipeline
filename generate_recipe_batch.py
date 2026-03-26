@@ -69,6 +69,11 @@ DEFAULT_HEADERS = [
     "pin_image_generated_url",
     "WPRM_recipe)card_url",
 ]
+PROMPT_OUTPUT_HEADERS = [
+    "featured_image_prompt",
+    "instructions_process_image_prompt",
+    "serving_image_prompt",
+]
 
 BLOCKED_DOMAINS = {
     "etsy.com",
@@ -97,6 +102,27 @@ def _apply_image_aliases(row: dict) -> None:
     for alias, source in alias_map.items():
         if alias not in row and source in row:
             row[alias] = row.get(source, "") or ""
+
+
+def _build_sheet_sync_row(
+    row: dict,
+    *,
+    focus_keyword: str,
+    recipe_url: str,
+    pinterest_url: str,
+) -> dict:
+    sync_row = dict(row or {})
+    if focus_keyword:
+        sync_row.setdefault("Recipe Name", focus_keyword)
+        sync_row.setdefault("recipe_name", focus_keyword)
+    if recipe_url:
+        sync_row.setdefault("Recipe URL", recipe_url)
+        sync_row.setdefault("recipe_url", recipe_url)
+        sync_row.setdefault("url", recipe_url)
+    if pinterest_url:
+        sync_row.setdefault("Pinterest URL", pinterest_url)
+        sync_row.setdefault("pinterest_url", pinterest_url)
+    return sync_row
 
 
 def _fetch_image_size(url: str, timeout: float) -> Optional[tuple[int, int]]:
@@ -565,7 +591,7 @@ def _process_recipe(
 
     # Try GPT-based prompt generation first (like legacy.py) - this is the preferred method
     if settings.openai_api_key and not settings.use_vision_prompts:
-        logger.info("Using GPT-based Midjourney prompt generation (legacy approach)")
+        logger.info("Using GPT-based image prompt generation")
         prompts = generate_midjourney_prompts_gpt(
             recipe,
             focus_keyword,
@@ -687,6 +713,7 @@ def _process_recipe(
         },
         reference_image_url=validated_prompt_image_url,
         sanitize=True,
+        image_engine=settings.image_engine,
     )
     featured_prompt = prompt_text_map.get("featured", "")
     instructions_prompt = prompt_text_map.get("instructions_process", "")
@@ -820,6 +847,16 @@ def main() -> int:
             logger.error("Template CSV not found: %s", args.template)
             return 1
         headers = load_template_headers(args.template)
+        missing_prompt_headers = [
+            header for header in PROMPT_OUTPUT_HEADERS if header not in headers
+        ]
+        if missing_prompt_headers:
+            logger.warning(
+                "Template '%s' is missing prompt columns: %s. "
+                "Those fields will not be written to the output CSV or synced sheet.",
+                args.template,
+                ", ".join(missing_prompt_headers),
+            )
     else:
         headers = DEFAULT_HEADERS
 
@@ -1012,10 +1049,17 @@ def main() -> int:
                 counts["written"] += 1
                 if sheet_writer:
                     try:
-                        sheet_writer.append_row(row)
+                        sheet_writer.upsert_row(
+                            _build_sheet_sync_row(
+                                row,
+                                focus_keyword=focus_keyword,
+                                recipe_url=url,
+                                pinterest_url=pinterest_url,
+                            )
+                        )
                     except Exception as exc:
                         counts["sheet_errors"] += 1
-                        logger.warning("Failed to append row to Google Sheet: %s", exc)
+                        logger.warning("Failed to sync row to Google Sheet: %s", exc)
             else:
                 counts["skipped"] += 1
             if status == "error":
