@@ -33,6 +33,22 @@ def test_shared_template_payload_and_bundle_use_same_source():
     assert "Shared visual anchor" in payload[0]["prompt"]
 
 
+def test_instructions_process_template_uses_six_panel_collage_rules():
+    payload = build_template_prompt_payload(
+        dish_name="Blueberry Muffins",
+        focus_keyword="blueberry muffins",
+        style_anchor="Shared visual anchor",
+        seed=77,
+    )
+
+    instructions_prompt = payload[1]["prompt"]
+
+    assert "6 equal panels in a 2-column 3-row grid" in instructions_prompt
+    assert "Panel 1: ingredient and mise en place setup" in instructions_prompt
+    assert "Panel 6: final oven placement or equivalent last active pre-completion step" in instructions_prompt
+    assert "never show serving, plating, finished dish presentation, or the final product" in instructions_prompt
+
+
 def test_finalize_prompt_map_applies_reference_image_only_to_supported_types():
     finalized = finalize_prompt_map(
         {

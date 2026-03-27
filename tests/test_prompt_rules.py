@@ -22,7 +22,7 @@ def test_featured_rules_preserve_reference_and_seed_and_add_ctr_language():
     assert "--v 6" in updated
 
 
-def test_process_rules_use_vertical_action_language_and_preserve_food_safety():
+def test_process_rules_enforce_six_panel_collage_and_preserve_food_safety():
     prompt = (
         "Instructions-only process photo of chicken soup, same batch as featured image, "
         "hands cooking, no text no watermark, no pork, no bacon, no ham --seed 123"
@@ -30,8 +30,9 @@ def test_process_rules_use_vertical_action_language_and_preserve_food_safety():
 
     updated = apply_pinterest_ctr_rules({"instructions-process": prompt})["instructions-process"]
 
-    assert "hands actively performing one clear cooking or baking step" in updated
-    assert "the action should read instantly at mobile size" in updated
+    assert "single vertical recipe process collage divided into 6 equal panels in a 2-column 3-row grid" in updated
+    assert "never show plating, serving, finished dish presentation, or the final product" in updated
+    assert "panels 1, 3, and 6 show no hands" in updated
     assert "no pork, no bacon, no ham, no lard, no gelatin, no alcohol" in updated
     assert "--ar 2:3" in updated
     assert "--seed 123" in updated

@@ -79,12 +79,12 @@ def generate_midjourney_prompts_gpt(
     uses_chatgpt_prompt_format = (settings.image_engine or "").strip().lower() == "openai"
     image_targets = (
         "1. Featured Image (Pinterest viral close-up hero). End with: Horizontal composition, 3:2 aspect ratio.\n"
-        "2. Instructions-only process photo (Hands preparing the dish). End with: Vertical composition, 2:3 aspect ratio.\n"
+        "2. Instructions-only process image (single six-panel step collage). End with: Vertical composition, 2:3 aspect ratio.\n"
         "3. Serving Image (Pinterest viral plated serving hero). End with: Vertical composition, 2:3 aspect ratio."
         if uses_chatgpt_prompt_format
         else
         "1. Featured Image (Pinterest viral close-up hero) --ar 3:2\n"
-        "2. Instructions-only process photo (Hands preparing the dish) --ar 2:3\n"
+        "2. Instructions-only process image (single six-panel step collage) --ar 2:3\n"
         "3. Serving Image (Pinterest viral plated serving hero) --ar 2:3"
     )
     continuity_rules = (
@@ -133,7 +133,23 @@ STRICT RULES FOR IMAGE GENERATION:
   • Shallow depth of field, DSLR 85mm aesthetic, rich contrast
   • Clean composition with negative space for text overlay
   • Natural marble or soft neutral surface may be visible
-- Instructions process photo MUST show hands actively preparing/cooking the dish
+- Instructions process image MUST be a single vertical collage following all of these rules:
+  • Divide the image into 6 equal panels in a 2-column 3-row grid
+  • Number the panels 1 to 6 with a small bold number in the top corner
+  • Lock all panels to identical soft warm natural window light, a recipe-matched pastel tone, and a neutral white marble background
+  • Show only cooking-method steps from prep through the last active step before completion
+  • Never show serving, plating, finished dish presentation, or the final product
+  • Panel 1: ingredient or mise en place setup, no hands
+  • Panel 2: first active manual technique, one active hand
+  • Panel 3: passive baking, resting, chilling, or cooling result, no hands
+  • Panel 4: second active mixing or combining step, one active hand, with a second hand only if needed to steady the bowl
+  • Panel 5: transfer or pour step, with only a minimal hand visible on the vessel edge
+  • Panel 6: final oven placement or equivalent last active pre-completion step, no hands visible
+  • Every panel must mention recipe-specific props and vessels with sizes and materials
+  • Every panel must describe food color, texture, imperfections, and realistic recipe-matched surface scatter such as flour, crumbs, zest, sugar grains, herbs, or smears
+  • Explicitly state hand presence, which hand is visible, and what it is doing, or explicitly state no hands
+  • Note shallow depth of field on all active panels
+  • Close the instructions prompt with one style paragraph covering commercial food blog photography, professional food photography, soft warm natural window light with warm golden highlights, a bright appetizing pastel tone keyed to the recipe's dominant color, shallow depth of field DSLR 85mm aesthetic, neutral white marble surface, slightly imperfect lived-in kitchen realism, the visual contrast between the recipe's components, and the phrase no text, no watermark, no labels, no branding, no packaging, no CGI, no synthetic texture
 - Serving image MUST match featured style:
   • Tight plated hero shot, commercial food blog look
   • Plate is secondary but visible, natural marble/neutral surface present

@@ -62,10 +62,31 @@ def _build_prompt_text(
         )
     if prompt_type == "instructions_process":
         return (
-            f"{dish}, recipe process image, hands actively preparing one clear cooking step, "
-            f"vertical composition, tools and ingredients only as supporting context, visually clean "
-            f"real-kitchen realism, attractive natural ingredient color, {anchor}, no text, no watermark, "
-            f"no labels, no branding, no packaging --ar 2:3 --seed {seed} --v 7"
+            f"{dish}, single vertical recipe process collage divided into 6 equal panels in a 2-column 3-row grid, "
+            "each panel numbered 1 to 6 with a small bold number in the top corner, all panels locked to identical "
+            "soft warm natural window light, a recipe-matched pastel color tone, and a neutral white marble background, "
+            "show only the cooking method steps from prep through the last active step before completion, never show "
+            "serving, plating, finished dish presentation, or the final product. "
+            "Panel 1: ingredient and mise en place setup with recipe-specific raw ingredients, organized tools, prep "
+            "bowls, measuring tools, and pans on marble, no hands. "
+            "Panel 2: first active manual technique with one active hand performing the first key recipe step, named "
+            "vessels with sizes and materials, recipe-matched scatter, and shallow depth of field. "
+            "Panel 3: passive result of a baking, resting, chilling, or cooling stage with recipe-specific texture "
+            "changes visible, no hands. "
+            "Panel 4: second active mixing or combining step with one active hand and a second hand only if needed to "
+            "steady the bowl, named vessels with sizes and materials, realistic scatter, and shallow depth of field. "
+            "Panel 5: transfer or pour step with only a minimal hand visible on the bowl, jug, tray, or pan edge, "
+            "named vessels with sizes and materials, realistic scatter, and shallow depth of field. "
+            "Panel 6: final oven placement or equivalent last active pre-completion step with no hands visible. "
+            "Every panel must describe food color, texture, slight imperfections, and realistic surface scatter "
+            "matching the recipe such as flour, crumbs, zest, sugar grains, herbs, or smears, and must explicitly "
+            "state the hand presence or explicit no hands. "
+            "Commercial food blog photography, professional food photography, soft warm natural window light with "
+            "warm golden highlights, bright appetizing pastel tone keyed to the recipe's dominant color, shallow "
+            "depth of field DSLR 85mm aesthetic, neutral white marble surface, slightly imperfect lived-in kitchen "
+            f"realism, emphasize the visual contrast between the recipe's main components, {anchor}, no text, no "
+            "watermark, no labels, no branding, no packaging, no CGI, no synthetic texture, vertical 2:3 aspect "
+            f"ratio --ar 2:3 --seed {seed} --v 7"
         )
     if prompt_type == "serving":
         return (
@@ -116,7 +137,7 @@ def _default_description(prompt_type: str) -> str:
     if prompt_type == "featured":
         return "Featured Pinterest recipe hero image"
     if prompt_type == "instructions_process":
-        return "Hands preparing the recipe during a clear cooking step"
+        return "Six-panel instructions collage showing the key recipe steps before completion"
     if prompt_type == "serving":
         return "Vertical serving image with strong appetite appeal"
     if prompt_type == "ingredients":
@@ -139,10 +160,10 @@ def _default_seo_metadata(prompt_type: str, dish_name: str, focus_keyword: str) 
         }
     if prompt_type == "instructions_process":
         return {
-            "alt_text": f"Preparing {keyword} step by step",
+            "alt_text": f"Six-panel process collage for preparing {keyword}",
             "filename": f"{slug}-instructions-process.jpg",
-            "caption": f"Preparing {dish}",
-            "description": f"Hands actively preparing {dish} during one clear recipe step.",
+            "caption": f"Step-by-step {dish} process collage",
+            "description": f"A six-panel process collage showing the key active recipe steps for {dish} before completion.",
         }
     if prompt_type == "serving":
         return {

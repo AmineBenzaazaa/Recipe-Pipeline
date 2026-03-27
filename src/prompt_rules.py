@@ -181,11 +181,13 @@ def _apply_prompt_rules(prompt: str, prompt_type: str) -> str:
     elif canonical_type == "instructions_process":
         clauses.extend(
             [
-                "vertical Pinterest process image",
-                "hands actively performing one clear cooking or baking step",
-                "the action should read instantly at mobile size",
-                "ingredients and tools stay as supporting context around the action",
-                "clean but slightly imperfect real-kitchen realism",
+                "single vertical recipe process collage divided into 6 equal panels in a 2-column 3-row grid",
+                "the panel arc runs from ingredient setup through the last active pre-completion step only",
+                "never show plating, serving, finished dish presentation, or the final product",
+                "panels 1, 3, and 6 show no hands, panels 2 and 4 show one active hand, panel 4 may include a second steadying hand, and panel 5 shows only a minimal hand on the vessel edge",
+                "all panels share locked soft warm window light, a recipe-matched pastel tone, and a neutral white marble background",
+                "every panel names props and vessels, food color and texture, realistic imperfections, recipe-matched surface scatter, and shallow depth of field on active panels",
+                "the six-panel progression should read instantly at mobile size",
             ]
         )
     elif canonical_type == "ingredients":
