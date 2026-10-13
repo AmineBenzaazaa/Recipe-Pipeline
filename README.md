@@ -1,3 +1,14 @@
+# Recipe Pipeline
+
+AI content pipeline for food publishers. It turns Pinterest pins or plain keyword lists into fully written recipe rows (titles, ingredients, steps, image prompts and SEO fields), ready for batch publishing with Blogio.
+
+- **Two routes in one Streamlit app:** a pins pipeline, and a keywords pipeline with keyword research plus AI selection (including an AI-only mode when no source URL exists).
+- **Batch CSV in, batch CSV out,** with retries on API calls and a cost-estimation script for each batch.
+
+**Stack:** Python · Streamlit · LLM APIs · Requests + BeautifulSoup · Pydantic · Tenacity
+
+---
+
 
 # Run it
  source .venv/bin/activate && streamlit run pipeline_ui.py

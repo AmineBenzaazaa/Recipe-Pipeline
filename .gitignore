@@ -1,33 +1,19 @@
 
-# env
+__pycache__/
+!.env.example
+.DS_Store
 .env
 .env.*
 .secrets/
 .streamlit/secrets.toml
-
-# macOS
-.DS_Store
-
-# Python
-__pycache__/
+.venv/
+.venv312/
 *.pyc
-
+# env
 # local runtime logs
+# macOS
+# Python
 logs/
-.venv312/
-venv/
-__pycache__/
-*.pyc
-.env
-node_modules/
-.DS_Store
-
-
-.venv312/
-venv/
-__pycache__/
-*.pyc
-.DS_Store
-.env
-
 midjourney_engine/api/build_files/
+node_modules/
+venv/
